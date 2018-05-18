@@ -1,21 +1,25 @@
 import numpy as np
 import os
-import pandas as pd
+from sklearn.neighbors import NearestNeighbors
 from pyntcloud import PyntCloud
 from datetime import datetime
 import argparse
 
 
-def icp(a_set, b_set):
+def search_nearest_neighbors(set_a, set_b):
+    pass
+
+
+def icp(model_set_points_cloud, data_set_points_cloud):
     pass
 
 
 def argument_parse():
     argument_parser = argparse.ArgumentParser(description='Script combine two points cloud in 3 dimensional space '
                                                           'with used algorithm ICP on .ply-files')
-    argument_parser.add_argument('-m', type=str, default='', help='input path to .ply-file with model for compare, '
+    argument_parser.add_argument('-m', type=str, default='', help='input path to .ply-file with model set for compare, '
                                                                   '(default used random points of cloud')
-    argument_parser.add_argument('-s', type=str, default='', help='input path to .ply-file with source model, '
+    argument_parser.add_argument('-s', type=str, default='', help='input path to .ply-file with data set, '
                                                                   '(default used random points of cloud')
     argument_parser.add_argument('-o', type=str, default='/tmp/', help='output path to result')
     args = argument_parser.parse_args()
@@ -29,7 +33,6 @@ def extract_points_cloud(path_to_file):
         return points
     points = np.empty(0, dtype='float32')
     n_vertices = 0
-    # points = pd.DataFrame(columns=['x', 'y', 'z'])
     with open(path_to_file, 'rb') as ply_file:
         t_start = datetime.now()
         for line in ply_file.readlines():
@@ -40,19 +43,18 @@ def extract_points_cloud(path_to_file):
             if b'v' in line:
                 x, y, z = line.decode().split()[1:]
                 points = np.append(points, np.array([[x, y, z]], dtype='float32'))
-                # append_df = pd.DataFrame([[x, y, z]], columns=['x', 'y', 'z'])
-                # points = points.append(append_df, ignore_index=True)
     points = points.reshape((n_vertices, 3))
     t_finish = datetime.now()
-    print(points)
+    # print(points)
     print(t_finish - t_start)
     return points
 
 
 def main():
     args = argument_parse()
-    model_points_cloud = extract_points_cloud(args.m)
-    source_points_cloud = extract_points_cloud(args.s)
+    model_set_points_cloud = extract_points_cloud(args.m)
+    data_set_points_cloud = extract_points_cloud(args.s)
+    transrofmation_points = icp(model_set_points_cloud, data_set_points_cloud)
     icp(None, None)
 
 
