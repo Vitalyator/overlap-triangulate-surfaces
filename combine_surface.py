@@ -1,10 +1,22 @@
 import numpy as np
 import os
 from sklearn.neighbors import NearestNeighbors
-from pyntcloud import PyntCloud
+# from pyntcloud import PyntCloud
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from datetime import datetime
 import argparse
 
+
+def draw_points_cloud(points, color='r', marker='o'):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(points[::10, 0], points[::10, 1], points[::10, 2], c=color, marker=marker)
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+
+    plt.show()
 
 def search_nearest_neighbors(model_set, data_set):
     """
@@ -123,6 +135,7 @@ def main():
     os.makedirs(args.o, exist_ok=True)
     model_set_points_cloud = extract_points_cloud(args.m)
     data_set_points_cloud = extract_points_cloud(args.s, copy_first_set=model_set_points_cloud)
+    draw_points_cloud(model_set_points_cloud)
     transform_matrix, distances, number_iteration = icp(model_set_points_cloud, data_set_points_cloud)
     print(transform_matrix, distances, number_iteration)
 
