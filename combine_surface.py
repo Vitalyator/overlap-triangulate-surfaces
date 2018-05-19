@@ -6,12 +6,78 @@ from datetime import datetime
 import argparse
 
 
-def search_nearest_neighbors(set_a, set_b):
-    pass
+def search_nearest_neighbors(model_set, data_set):
+    """
+
+    :param model_set:
+    :param data_set:
+    :return:
+    >>> sample_array = np.array([[1.0, 1.0, 0.0], [2.0, 2.0, 0.0], [3.0, 3.0, 0.0]])
+    >>> dest_array = np.array([[2.0, 1.5, 0.0], [3.0, 2.5, 0.0],[1.0, 0.0, 0.0]])
+    >>> search_nearest_neighbors(sample_array, dest_array)
+    (array([0.5, 0.5, 1. ]), array([1, 2, 0]))
+    """
+    neighbors = NearestNeighbors(n_neighbors=1)
+    neighbors.fit(data_set)
+    distances, indices = neighbors.kneighbors(model_set, return_distance=True)
+    return distances.ravel(), indices.ravel()
 
 
-def icp(model_set_points_cloud, data_set_points_cloud):
-    pass
+def search_optimal_transform(data, model):
+    assert data.shape == model.shape
+
+    m = data.shape[1]
+
+    centroid_data = np.mean(data, axis=0)
+    centroid_model = np.mean(model, axis=0)
+
+    normalize_data = data - centroid_data
+    normalize_model = model - centroid_model
+
+    H = np.dot(normalize_data.T, normalize_model)
+    U, S, Vt = np.linalg.svd(H)
+    R = np.dot(Vt.T, U.T)
+
+    if np.linalg.det(R) < 0:
+        Vt[m-1, :] *= -1
+        R = np.dot(Vt.T, U.t)
+
+    t = centroid_model.T - np.dot(R, centroid_data.T)
+
+    T = np.identity(m+1)
+    T[:m, :m] = R
+    T[:m, m] = t
+
+    return T, R, t
+
+
+def icp(data_set_points, model_set_points, init_pose=None, max_iterations=20, tolerance=0.001):
+    assert model_set_points.shape == data_set_points.shape
+
+    m = model_set_points.shape[1]
+
+    model = np.ones((m + 1, model_set_points.shape[0]))
+    data = np.ones((m + 1, model_set_points.shape[0]))
+    model[:m, :] = np.copy(model_set_points.T)
+    data[:m, :] = np.copy(data_set_points.T)
+
+    if init_pose is not None:
+        data = np.dot(init_pose, data)
+
+    prev_error = 0
+
+    for i in range(max_iterations):
+        distances, indices = search_nearest_neighbors(data, model)
+        T, _, __ = search_optimal_transform(data[:m, :].T, model[:m, :].T)
+        data = np.dot(T, data)
+        mean_error = np.mean(distances)
+        if np.abs(prev_error - mean_error) < tolerance:
+            break
+        prev_error = mean_error
+
+    T, _, __ = search_optimal_transform(data_set_points, data[:m, :].T)
+
+    return T, distances, i
 
 
 def argument_parse():
@@ -21,12 +87,14 @@ def argument_parse():
                                                                   '(default used random points of cloud')
     argument_parser.add_argument('-s', type=str, default='', help='input path to .ply-file with data set, '
                                                                   '(default used random points of cloud')
-    argument_parser.add_argument('-o', type=str, default='/tmp/', help='output path to result')
+    argument_parser.add_argument('-o', type=str, default='/tmp/compare_results/', help='output path to result')
     args = argument_parser.parse_args()
     return args
 
 
-def extract_points_cloud(path_to_file):
+def extract_points_cloud(path_to_file, copy_first_set=None):
+    if copy_first_set is not None:
+        return copy_first_set
     if not os.path.isfile(path_to_file):
         points = 2 * np.random.random_sample((100, 3)) - 1
         print(points, type(points))
@@ -52,10 +120,11 @@ def extract_points_cloud(path_to_file):
 
 def main():
     args = argument_parse()
+    os.makedirs(args.o, exist_ok=True)
     model_set_points_cloud = extract_points_cloud(args.m)
-    data_set_points_cloud = extract_points_cloud(args.s)
-    transrofmation_points = icp(model_set_points_cloud, data_set_points_cloud)
-    icp(None, None)
+    data_set_points_cloud = extract_points_cloud(args.s, copy_first_set=model_set_points_cloud)
+    transform_matrix, distances, number_iteration = icp(model_set_points_cloud, data_set_points_cloud)
+    print(transform_matrix, distances, number_iteration)
 
 
 if __name__ == '__main__':
