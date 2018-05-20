@@ -8,15 +8,39 @@ from datetime import datetime
 import argparse
 
 
+def randrange(n, vmin, vmax):
+    '''
+    Helper function to make an array of random numbers having shape (n, )
+    with each number distributed Uniform(vmin, vmax).
+    '''
+    return (vmax - vmin)*np.random.rand(n) + vmin
+
+
+def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.3, b=0.2, c=0.1):
+    theta = np.linspace(-np.pi / 2, np.pi / 2, num=20)
+    thi = np.linspace(0, 2 * np.pi, num=20)
+    points = np.empty(0)
+    for ang1 in theta:
+        for ang2 in thi:
+            x = center[0] + a * np.sin(ang2) * np.cos(ang1)
+            y = center[1] + b * np.sin(ang2) * np.sin(ang1)
+            z = center[2] + c * np.cos(ang2)
+            points = np.append(points, np.array([[x, y, z]]))
+    print(points.reshape((-1, 3)))
+    draw_points_cloud(points.reshape((-1, 3)))
+    return points.reshape((100, 3))
+
+
 def draw_points_cloud(points, color='r', marker='o'):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(points[::10, 0], points[::10, 1], points[::10, 2], c=color, marker=marker)
+    ax.scatter(points[:, 0], points[:, 1], points[:, 2], c=color, marker=marker)
     ax.set_xlabel('X Label')
     ax.set_ylabel('Y Label')
     ax.set_zlabel('Z Label')
 
     plt.show()
+
 
 def search_nearest_neighbors(model_set, data_set):
     """
@@ -63,6 +87,14 @@ def search_optimal_transform(data, model):
     return T, R, t
 
 
+def p_to_p_min(data, model, indices):
+    errors = []
+    for i in range(data.shape[0]):
+        error = pow(np.linalg.norm(data[i] - model[indices[i]]), 2)
+        errors.append(error)
+    return sum(errors)
+
+
 def icp(data_set_points, model_set_points, init_pose=None, max_iterations=20, tolerance=0.001):
     assert model_set_points.shape == data_set_points.shape
 
@@ -76,20 +108,19 @@ def icp(data_set_points, model_set_points, init_pose=None, max_iterations=20, to
     if init_pose is not None:
         data = np.dot(init_pose, data)
 
-    prev_error = 0
-
     for i in range(max_iterations):
         distances, indices = search_nearest_neighbors(data, model)
+
+        error = p_to_p_min(data, model, indices)
+        if error < tolerance:
+            break
+
         T, _, __ = search_optimal_transform(data[:m, :].T, model[:m, :].T)
         data = np.dot(T, data)
-        mean_error = np.mean(distances)
-        if np.abs(prev_error - mean_error) < tolerance:
-            break
-        prev_error = mean_error
 
     T, _, __ = search_optimal_transform(data_set_points, data[:m, :].T)
 
-    return T, distances, i
+    return T, i
 
 
 def argument_parse():
@@ -108,8 +139,9 @@ def extract_points_cloud(path_to_file, copy_first_set=None):
     if copy_first_set is not None:
         return copy_first_set
     if not os.path.isfile(path_to_file):
-        points = 2 * np.random.random_sample((100, 3)) - 1
-        print(points, type(points))
+        # points = 2 * np.random.random_sample(100) - 1
+        # print(points, type(points))
+        points = make_points_ellipsoid()
         return points
     points = np.empty(0, dtype='float32')
     n_vertices = 0
@@ -123,6 +155,8 @@ def extract_points_cloud(path_to_file, copy_first_set=None):
             if b'v' in line:
                 x, y, z = line.decode().split()[1:]
                 points = np.append(points, np.array([[x, y, z]], dtype='float32'))
+            if b'f' in line:
+                break
     points = points.reshape((n_vertices, 3))
     t_finish = datetime.now()
     # print(points)
@@ -135,9 +169,8 @@ def main():
     os.makedirs(args.o, exist_ok=True)
     model_set_points_cloud = extract_points_cloud(args.m)
     data_set_points_cloud = extract_points_cloud(args.s, copy_first_set=model_set_points_cloud)
-    draw_points_cloud(model_set_points_cloud)
-    transform_matrix, distances, number_iteration = icp(model_set_points_cloud, data_set_points_cloud)
-    print(transform_matrix, distances, number_iteration)
+    transform_matrix, number_iteration = icp(model_set_points_cloud, data_set_points_cloud)
+    print(transform_matrix, number_iteration)
 
 
 if __name__ == '__main__':
