@@ -3,6 +3,7 @@ import os
 from sklearn.neighbors import NearestNeighbors
 # from pyntcloud import PyntCloud
 import matplotlib.pyplot as plt
+import matplotlib.tri as mtri
 from mpl_toolkits.mplot3d import Axes3D
 from collections import defaultdict
 from datetime import datetime
@@ -41,6 +42,7 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
             y = center[1] + b * np.sin(ang2) * np.sin(ang1)
             z = center[2] + c * np.cos(ang2)
             points = np.append(points, np.array([[x, y, z]]))
+    points = np.unique(points, axis=0)
     return points.reshape((-1, 3))
 
 
@@ -175,29 +177,27 @@ def argument_parse():
 
 
 def extract_points_cloud(path_to_file, copy_first_set=None):
+    points = np.empty(0)
+    faces = np.empty(0)
     if copy_first_set is not None:
-        return make_points_ellipsoid(center=[0.5, 0.5, 0.4])
-    if not os.path.isfile(path_to_file):
+        points = make_points_ellipsoid(center=[0.5, 0.5, 0.4])
+    elif not os.path.isfile(path_to_file):
         points = make_points_ellipsoid()
-        return points
-    points = np.empty(0, dtype='float32')
-    faces = np.empty(0, dtype='int')
-    n_vertices = 0
-    with open(path_to_file, 'rb') as ply_file:
-        t_start = datetime.now()
-        for line in ply_file.readlines():
-            if b'vertices' in line:
-                n_vertices = int(line.decode().split()[-1])
-                continue
-            # print(line)
-            if b'v' in line:
-                x, y, z = line.decode().split()[1:]
-                points = np.append(points, np.array([[x, y, z]], dtype='float32'))
-            if b'f' in line.split():
-                p_ind_1, p_ind_2, p_ind_3 = line.decode().split()[1:]
-                faces = np.append(faces, np.array([[int(p_ind_1) - 1, int(p_ind_2) - 1, int(p_ind_3) - 1]], dtype='int'))
-    t_finish = datetime.now()
-    print(t_finish - t_start)
+    else:
+        with open(path_to_file, 'rb') as ply_file:
+            t_start = datetime.now()
+            for line in ply_file.readlines():
+                if b'vertices' or b'faces' in line:
+                    continue
+                # print(line)
+                if b'v' in line:
+                    x, y, z = line.decode().split()[1:]
+                    points = np.append(points, np.array([[x, y, z]], dtype='float32'))
+                if b'f' in line.split():
+                    p_ind_1, p_ind_2, p_ind_3 = line.decode().split()[1:]
+                    faces = np.append(faces, np.array([[int(p_ind_1) - 1, int(p_ind_2) - 1, int(p_ind_3) - 1]], dtype='int'))
+        t_finish = datetime.now()
+        print(t_finish - t_start)
     return points.reshape((-1, 3)), faces.reshape((-1, 3))
 
 
@@ -208,10 +208,10 @@ def get_normal(p1, p2, p3):
     return normal
 
 
-def generate_normals(model_set_points_cloud, model_faces=None):
+def generate_normals(model_set_points_cloud, model_faces=[]):
     closest_normals = defaultdict(list)
     normals_point = np.empty(0)
-    if model_faces is not None:
+    if len(model_faces) != 0:
         for face in model_faces:
             normal = get_normal(model_set_points_cloud[face[0]], model_set_points_cloud[face[1]], model_set_points_cloud[face[2]])
             closest_normals[face[0]].append(normal)
@@ -220,6 +220,20 @@ def generate_normals(model_set_points_cloud, model_faces=None):
         for i in range(model_set_points_cloud.shape[0]):
             normals = np.array([closest_normals[i]])
             normals_point = np.append(normals_point, np.mean(normals, axis=1))
+    else:
+        neighbors = NearestNeighbors(n_neighbors=5)
+        neighbors.fit(model_set_points_cloud)
+        indices = neighbors.kneighbors(model_set_points_cloud, return_distance=False)
+        for neighbors_points in indices:
+            print(neighbors_points)
+            sub_set = model_set_points_cloud[neighbors_points]
+            rad = np.linalg.norm(sub_set, axis=1)
+            zen = np.arccos(sub_set[:, -1] / rad)
+            azi = np.arctan2(sub_set[:, 1], sub_set[:, 0])
+
+            tris = mtri.Triangulation(zen, azi)
+            # TODO complete calculate normals
+            print(tris.triangles)
     return normals_point.reshape((-1, 3))
 
 
@@ -228,7 +242,7 @@ def main():
     os.makedirs(args.o, exist_ok=True)
     model_set_points_cloud, model_faces = extract_points_cloud(args.m)
     model_normals = generate_normals(model_set_points_cloud, model_faces)
-    data_set_points_cloud = extract_points_cloud(args.s, copy_first_set=model_set_points_cloud)
+    data_set_points_cloud, _ = extract_points_cloud(args.s, copy_first_set=model_set_points_cloud)
     draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud)
     transform_matrix, number_iteration = icp(model_set_points_cloud, data_set_points_cloud, model_normals)
     print(transform_matrix, number_iteration)
