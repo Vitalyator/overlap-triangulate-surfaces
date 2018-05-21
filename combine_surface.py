@@ -4,6 +4,7 @@ from sklearn.neighbors import NearestNeighbors
 # from pyntcloud import PyntCloud
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from collections import defaultdict
 from datetime import datetime
 import argparse
 
@@ -16,9 +17,23 @@ def randrange(n, vmin, vmax):
     return (vmax - vmin)*np.random.rand(n) + vmin
 
 
-def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.3, b=0.2, c=0.1):
+def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(model_set_points_cloud[:, 0], model_set_points_cloud[:, 1], model_set_points_cloud[:, 2],
+               c='r', marker='o')
+    ax.scatter(data_set_points_cloud[:, 0], data_set_points_cloud[:, 1], data_set_points_cloud[:, 2],
+               c='b', marker='+')
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+
+    plt.show()
+
+
+def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
     theta = np.linspace(-np.pi / 2, np.pi / 2, num=20)
-    thi = np.linspace(0, 2 * np.pi, num=20)
+    thi = np.linspace(0, 2 * np.pi, num=30)
     points = np.empty(0)
     for ang1 in theta:
         for ang2 in thi:
@@ -26,9 +41,7 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.3, b=0.2, c=0.1):
             y = center[1] + b * np.sin(ang2) * np.sin(ang1)
             z = center[2] + c * np.cos(ang2)
             points = np.append(points, np.array([[x, y, z]]))
-    print(points.reshape((-1, 3)))
-    draw_points_cloud(points.reshape((-1, 3)))
-    return points.reshape((100, 3))
+    return points.reshape((-1, 3))
 
 
 def draw_points_cloud(points, color='r', marker='o'):
@@ -42,7 +55,7 @@ def draw_points_cloud(points, color='r', marker='o'):
     plt.show()
 
 
-def search_nearest_neighbors(model_set, data_set):
+def search_nearest_neighbors(data_set, model_set):
     """
 
     :param model_set:
@@ -87,6 +100,31 @@ def search_optimal_transform(data, model):
     return T, R, t
 
 
+def search_optimal_transform_with_normals(data, model, normals_model, indices):
+    """
+
+    :param data:
+    :param model:
+    :param indices:
+    :return:
+
+
+    """
+    assert data.shape == model.shape
+
+    m = data.shape[1]
+
+    model = model[indices]
+    b = np.dot(normals_model.T, model) - np.dot(normals_model.T, data)
+    a = np.cross(data, normals_model)
+    A = np.hstack(a, normals_model)
+    U, S, Vt = np.linalg.svd(A)
+    S_inverse = np.linalg.inv(S)
+    A_pse_inverse = np.dot(np.dot(Vt.T, S_inverse), U.T)
+    x_opt = np.dot(A_pse_inverse, b)
+    return x_opt
+
+
 def p_to_p_min(data, model, indices):
     errors = []
     for i in range(data.shape[0]):
@@ -95,7 +133,7 @@ def p_to_p_min(data, model, indices):
     return sum(errors)
 
 
-def icp(data_set_points, model_set_points, init_pose=None, max_iterations=20, tolerance=0.001):
+def icp(data_set_points, model_set_points, model_normals, init_pose=None, max_iterations=20, tolerance=0.001):
     assert model_set_points.shape == data_set_points.shape
 
     m = model_set_points.shape[1]
@@ -117,6 +155,7 @@ def icp(data_set_points, model_set_points, init_pose=None, max_iterations=20, to
 
         T, _, __ = search_optimal_transform(data[:m, :].T, model[:m, :].T)
         data = np.dot(T, data)
+        draw_set_points_clouds(model[:m, :].T, data[:m, :].T)
 
     T, _, __ = search_optimal_transform(data_set_points, data[:m, :].T)
 
@@ -137,13 +176,12 @@ def argument_parse():
 
 def extract_points_cloud(path_to_file, copy_first_set=None):
     if copy_first_set is not None:
-        return copy_first_set
+        return make_points_ellipsoid(center=[0.5, 0.5, 0.4])
     if not os.path.isfile(path_to_file):
-        # points = 2 * np.random.random_sample(100) - 1
-        # print(points, type(points))
         points = make_points_ellipsoid()
         return points
     points = np.empty(0, dtype='float32')
+    faces = np.empty(0, dtype='int')
     n_vertices = 0
     with open(path_to_file, 'rb') as ply_file:
         t_start = datetime.now()
@@ -151,25 +189,48 @@ def extract_points_cloud(path_to_file, copy_first_set=None):
             if b'vertices' in line:
                 n_vertices = int(line.decode().split()[-1])
                 continue
-            print(line)
+            # print(line)
             if b'v' in line:
                 x, y, z = line.decode().split()[1:]
                 points = np.append(points, np.array([[x, y, z]], dtype='float32'))
-            if b'f' in line:
-                break
-    points = points.reshape((n_vertices, 3))
+            if b'f' in line.split():
+                p_ind_1, p_ind_2, p_ind_3 = line.decode().split()[1:]
+                faces = np.append(faces, np.array([[int(p_ind_1) - 1, int(p_ind_2) - 1, int(p_ind_3) - 1]], dtype='int'))
     t_finish = datetime.now()
-    # print(points)
     print(t_finish - t_start)
-    return points
+    return points.reshape((-1, 3)), faces.reshape((-1, 3))
+
+
+def get_normal(p1, p2, p3):
+    v1 = p1 - p2
+    v2 = p2 - p3
+    normal = np.cross(v1, v2)
+    return normal
+
+
+def generate_normals(model_set_points_cloud, model_faces=None):
+    closest_normals = defaultdict(list)
+    normals_point = np.empty(0)
+    if model_faces is not None:
+        for face in model_faces:
+            normal = get_normal(model_set_points_cloud[face[0]], model_set_points_cloud[face[1]], model_set_points_cloud[face[2]])
+            closest_normals[face[0]].append(normal)
+            closest_normals[face[1]].append(normal)
+            closest_normals[face[2]].append(normal)
+        for i in range(model_set_points_cloud.shape[0]):
+            normals = np.array([closest_normals[i]])
+            normals_point = np.append(normals_point, np.mean(normals, axis=1))
+    return normals_point.reshape((-1, 3))
 
 
 def main():
     args = argument_parse()
     os.makedirs(args.o, exist_ok=True)
-    model_set_points_cloud = extract_points_cloud(args.m)
+    model_set_points_cloud, model_faces = extract_points_cloud(args.m)
+    model_normals = generate_normals(model_set_points_cloud, model_faces)
     data_set_points_cloud = extract_points_cloud(args.s, copy_first_set=model_set_points_cloud)
-    transform_matrix, number_iteration = icp(model_set_points_cloud, data_set_points_cloud)
+    draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud)
+    transform_matrix, number_iteration = icp(model_set_points_cloud, data_set_points_cloud, model_normals)
     print(transform_matrix, number_iteration)
 
 
