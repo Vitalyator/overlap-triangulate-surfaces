@@ -195,22 +195,29 @@ def argument_parse():
 
 def extract_points_cloud(path_to_file):
     points = np.empty(0)
-    faces = np.empty(0)
+    faces = np.empty(0, dtype='int')
+    n_points = 0
+    n_faces = 0
     with open(path_to_file, 'rb') as ply_file:
         t_start = datetime.now()
         for line in ply_file.readlines():
-            if b'vertices' or b'faces' in line:
-                continue
             # print(line)
-            if b'v' in line:
+            if b'vertices' in line:
+                n_points = int(line.split()[-1].decode())
+                continue
+            if b'faces' in line:
+                n_faces = int(line.split()[-1].decode())
+                continue
+            if b'v' in line.split():
                 x, y, z = line.decode().split()[1:]
                 points = np.append(points, np.array([[x, y, z]], dtype='float32'))
+                continue
             if b'f' in line.split():
                 p_ind_1, p_ind_2, p_ind_3 = line.decode().split()[1:]
-                faces = np.append(faces, np.array([[int(p_ind_1) - 1, int(p_ind_2) - 1, int(p_ind_3) - 1]], dtype='int'))
+                faces = np.append(faces, np.array([[int(p_ind_1) - 1, int(p_ind_2) - 1, int(p_ind_3) - 1]]))
     t_finish = datetime.now()
     print(t_finish - t_start)
-    return points, faces
+    return points.reshape(n_points, 3), faces.reshape(n_faces, 3)
 
 
 def get_normal(p1, p2, p3):
@@ -221,7 +228,6 @@ def get_normal(p1, p2, p3):
 
 
 def generate_normals(model_set, model_faces=[]):
-    model_set = np.unique(model_set, axis=0)
     closest_normals = defaultdict(list)
     normals_point = np.empty(0)
     if len(model_faces) == 0:
