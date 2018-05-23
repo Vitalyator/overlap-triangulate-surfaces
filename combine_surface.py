@@ -8,6 +8,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from collections import defaultdict
 from datetime import datetime
 import argparse
+from sympy import diff, symbols, sin, cos
 
 
 def randrange(n, vmin, vmax):
@@ -33,26 +34,40 @@ def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud):
 
 
 def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
-    theta = np.linspace(-np.pi / 2, np.pi / 2, num=20)
-    thi = np.linspace(0, 2 * np.pi, num=30)
+    theta = np.linspace(-np.pi / 2, np.pi / 2, num=40)
+    thi = np.linspace(0, 2 * np.pi, num=40)
     points = np.empty(0)
-    for ang1 in theta:
-        for ang2 in thi:
-            x = center[0] + a * np.sin(ang2) * np.cos(ang1)
-            y = center[1] + b * np.sin(ang2) * np.sin(ang1)
-            z = center[2] + c * np.cos(ang2)
+    normals = np.empty(0)
+    for u in theta:
+        for v in thi:
+            x = center[0] + a * np.sin(v) * np.cos(u)
+            y = center[1] + b * np.sin(v) * np.sin(u)
+            z = center[2] + c * np.cos(v)
             points = np.append(points, np.array([[x, y, z]]))
-    points = np.unique(points, axis=0)
-    return points.reshape((-1, 3))
+            dx_u = -a * np.sin(u) * np.sin(v)
+            dx_v = a * np.cos(u) * np.cos(v)
+            dy_u = b * np.sin(v) * np.cos(u)
+            dy_v = b * np.sin(u) * np.cos(v)
+            dz_u = 0
+            dz_v = -c * np.sin(v)
+            normal = np.cross(np.array([[dx_u, dy_u, dz_u]]), np.array([[dx_v, dy_v, dz_v]]))
+            normal = normal / np.linalg.norm(normal) if np.linalg.norm(normal) != 0 else normal
+            normals = np.append(normals, normal)
+    return points.reshape((-1, 3)), normals.reshape((-1, 3))
 
 
-def draw_points_cloud(points, color='r', marker='o'):
+def draw_points_cloud(points, normals=None, color='r', marker='o'):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(points[:, 0], points[:, 1], points[:, 2], c=color, marker=marker)
-    ax.set_xlabel('X Label')
-    ax.set_ylabel('Y Label')
-    ax.set_zlabel('Z Label')
+    ax.scatter(points[:, 0], points[:, 1], points[:, 2], c=color, marker=marker, s=3)
+    if normals is not None:
+        normals = points + normals / 100
+        for i in range(points.shape[0]):
+            line = np.stack((points[i], normals[i]), axis=-1)
+            ax.plot(line[0], line[1], line[2], 'g-')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
 
     plt.show()
 
@@ -122,6 +137,7 @@ def search_optimal_transform_with_normals(data, model, normals_model, indices):
     A = np.hstack(a, normals_model)
     U, S, Vt = np.linalg.svd(A)
     S_inverse = np.linalg.inv(S)
+    S_inverse = np.where(S == 0., S_inverse, 0.)
     A_pse_inverse = np.dot(np.dot(Vt.T, S_inverse), U.T)
     x_opt = np.dot(A_pse_inverse, b)
     return x_opt
@@ -157,6 +173,7 @@ def icp(data_set_points, model_set_points, model_normals, init_pose=None, max_it
 
         T, _, __ = search_optimal_transform(data[:m, :].T, model[:m, :].T)
         data = np.dot(T, data)
+        # search_optimal_transform_with_normals(data, model, model_normals, indices)
         draw_set_points_clouds(model[:m, :].T, data[:m, :].T)
 
     T, _, __ = search_optimal_transform(data_set_points, data[:m, :].T)
@@ -176,29 +193,24 @@ def argument_parse():
     return args
 
 
-def extract_points_cloud(path_to_file, copy_first_set=None):
+def extract_points_cloud(path_to_file):
     points = np.empty(0)
     faces = np.empty(0)
-    if copy_first_set is not None:
-        points = make_points_ellipsoid(center=[0.5, 0.5, 0.4])
-    elif not os.path.isfile(path_to_file):
-        points = make_points_ellipsoid()
-    else:
-        with open(path_to_file, 'rb') as ply_file:
-            t_start = datetime.now()
-            for line in ply_file.readlines():
-                if b'vertices' or b'faces' in line:
-                    continue
-                # print(line)
-                if b'v' in line:
-                    x, y, z = line.decode().split()[1:]
-                    points = np.append(points, np.array([[x, y, z]], dtype='float32'))
-                if b'f' in line.split():
-                    p_ind_1, p_ind_2, p_ind_3 = line.decode().split()[1:]
-                    faces = np.append(faces, np.array([[int(p_ind_1) - 1, int(p_ind_2) - 1, int(p_ind_3) - 1]], dtype='int'))
-        t_finish = datetime.now()
-        print(t_finish - t_start)
-    return points.reshape((-1, 3)), faces.reshape((-1, 3))
+    with open(path_to_file, 'rb') as ply_file:
+        t_start = datetime.now()
+        for line in ply_file.readlines():
+            if b'vertices' or b'faces' in line:
+                continue
+            # print(line)
+            if b'v' in line:
+                x, y, z = line.decode().split()[1:]
+                points = np.append(points, np.array([[x, y, z]], dtype='float32'))
+            if b'f' in line.split():
+                p_ind_1, p_ind_2, p_ind_3 = line.decode().split()[1:]
+                faces = np.append(faces, np.array([[int(p_ind_1) - 1, int(p_ind_2) - 1, int(p_ind_3) - 1]], dtype='int'))
+    t_finish = datetime.now()
+    print(t_finish - t_start)
+    return points, faces
 
 
 def get_normal(p1, p2, p3):
@@ -208,43 +220,40 @@ def get_normal(p1, p2, p3):
     return normal
 
 
-def generate_normals(model_set_points_cloud, model_faces=[]):
+def generate_normals(model_set, model_faces=[]):
+    model_set = np.unique(model_set, axis=0)
     closest_normals = defaultdict(list)
     normals_point = np.empty(0)
-    if len(model_faces) != 0:
-        for face in model_faces:
-            normal = get_normal(model_set_points_cloud[face[0]], model_set_points_cloud[face[1]], model_set_points_cloud[face[2]])
-            closest_normals[face[0]].append(normal)
-            closest_normals[face[1]].append(normal)
-            closest_normals[face[2]].append(normal)
-        for i in range(model_set_points_cloud.shape[0]):
-            normals = np.array([closest_normals[i]])
-            normals_point = np.append(normals_point, np.mean(normals, axis=1))
-    else:
-        neighbors = NearestNeighbors(n_neighbors=5)
-        neighbors.fit(model_set_points_cloud)
-        indices = neighbors.kneighbors(model_set_points_cloud, return_distance=False)
-        for neighbors_points in indices:
-            print(neighbors_points)
-            sub_set = model_set_points_cloud[neighbors_points]
-            rad = np.linalg.norm(sub_set, axis=1)
-            zen = np.arccos(sub_set[:, -1] / rad)
-            azi = np.arctan2(sub_set[:, 1], sub_set[:, 0])
-
-            tris = mtri.Triangulation(zen, azi)
-            # TODO complete calculate normals
-            print(tris.triangles)
+    if len(model_faces) == 0:
+        print("Couldn\'t calculate normals, have\'t faces")
+        return normals_point
+    for face in model_faces:
+        normal = get_normal(model_set[face[0]], model_set[face[1]], model_set[face[2]])
+        closest_normals[face[0]].append(normal)
+        closest_normals[face[1]].append(normal)
+        closest_normals[face[2]].append(normal)
+    for i in range(model_set.shape[0]):
+        normals = np.array([closest_normals[i]])
+        normals_point = np.append(normals_point, np.mean(normals, axis=1))
     return normals_point.reshape((-1, 3))
 
 
 def main():
     args = argument_parse()
     os.makedirs(args.o, exist_ok=True)
-    model_set_points_cloud, model_faces = extract_points_cloud(args.m)
-    model_normals = generate_normals(model_set_points_cloud, model_faces)
-    data_set_points_cloud, _ = extract_points_cloud(args.s, copy_first_set=model_set_points_cloud)
-    draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud)
-    transform_matrix, number_iteration = icp(model_set_points_cloud, data_set_points_cloud, model_normals)
+    model_set = None
+    data_set = None
+    model_normals = None
+    if os.path.isfile(args.m) and os.path.isfile(args.s):
+        model_set, model_faces = extract_points_cloud(args.m)
+        model_normals = generate_normals(model_set, model_faces)
+        data_set, _ = extract_points_cloud(args.s)
+    else:
+        model_set, model_normals = make_points_ellipsoid()
+        # draw_points_cloud(model_set, normals=model_normals, color='r', marker='o')
+        data_set, _ = make_points_ellipsoid(center=[0.5, 0.5, 0.4])
+    draw_set_points_clouds(model_set, data_set)
+    transform_matrix, number_iteration = icp(model_set, data_set, model_normals)
     print(transform_matrix, number_iteration)
 
 
