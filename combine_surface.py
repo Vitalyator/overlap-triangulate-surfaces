@@ -59,10 +59,12 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
 def draw_points_cloud(points, normals=None, color='r', marker='o'):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(points[:, 0], points[:, 1], points[:, 2], c=color, marker=marker, s=3)
+    if points.shape[0] > 1000:
+        step = int(points.shape[0] / 1000)
+    ax.scatter(points[::step, 0], points[::step, 1], points[::step, 2], c=color, marker=marker, s=3)
     if normals is not None:
         normals = points + normals / 100
-        for i in range(points.shape[0]):
+        for i in range(0, points.shape[0], step):
             line = np.stack((points[i], normals[i]), axis=-1)
             ax.plot(line[0], line[1], line[2], 'g-')
     ax.set_xlabel('X')
@@ -217,6 +219,7 @@ def extract_points_cloud(path_to_file):
                 faces = np.append(faces, np.array([[int(p_ind_1) - 1, int(p_ind_2) - 1, int(p_ind_3) - 1]]))
     t_finish = datetime.now()
     print(t_finish - t_start)
+    points = points + np.abs(np.min(points))
     return points.reshape(n_points, 3), faces.reshape(n_faces, 3)
 
 
@@ -240,7 +243,9 @@ def generate_normals(model_set, model_faces=[]):
         closest_normals[face[2]].append(normal)
     for i in range(model_set.shape[0]):
         normals = np.array([closest_normals[i]])
-        normals_point = np.append(normals_point, np.mean(normals, axis=1))
+        mean_normal = np.mean(normals, axis=1)
+        mean_normal = mean_normal / np.linalg.norm(mean_normal) if np.linalg.norm(mean_normal) != 0 else mean_normal
+        normals_point = np.append(normals_point, mean_normal)
     return normals_point.reshape((-1, 3))
 
 
@@ -253,6 +258,7 @@ def main():
     if os.path.isfile(args.m) and os.path.isfile(args.s):
         model_set, model_faces = extract_points_cloud(args.m)
         model_normals = generate_normals(model_set, model_faces)
+        draw_points_cloud(model_set, normals=model_normals, color='r', marker='o')
         data_set, _ = extract_points_cloud(args.s)
     else:
         model_set, model_normals = make_points_ellipsoid()
