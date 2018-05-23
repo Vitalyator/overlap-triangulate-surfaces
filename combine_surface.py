@@ -122,6 +122,7 @@ def search_optimal_transform(data, model):
 def search_optimal_transform_with_normals(data, model, normals_model, indices):
     """
 
+    :param normals_model:
     :param data:
     :param model:
     :param indices:
@@ -134,23 +135,22 @@ def search_optimal_transform_with_normals(data, model, normals_model, indices):
     m = data.shape[1]
 
     model = model[indices]
-    b = np.dot(normals_model.T, model) - np.dot(normals_model.T, data)
+    normals_model[indices]
+
+    b = np.diag(np.dot(normals_model, model.T)) - np.diag(np.dot(normals_model, data.T))
     a = np.cross(data, normals_model)
-    A = np.hstack(a, normals_model)
-    U, S, Vt = np.linalg.svd(A)
-    S_inverse = np.linalg.inv(S)
-    S_inverse = np.where(S == 0., S_inverse, 0.)
-    A_pse_inverse = np.dot(np.dot(Vt.T, S_inverse), U.T)
+    A = np.hstack((a, normals_model))
+    U, S, Vt = np.linalg.svd(A, full_matrices=False)
+    matr_s = np.diagflat(S)
+    S_inverse = np.linalg.inv(matr_s)
+    A_pse_inverse = np.dot(np.dot(Vt, S_inverse), U.T)
     x_opt = np.dot(A_pse_inverse, b)
     return x_opt
 
 
 def p_to_p_min(data, model, indices):
-    errors = []
-    for i in range(data.shape[0]):
-        error = pow(np.linalg.norm(data[i] - model[indices[i]]), 2)
-        errors.append(error)
-    return sum(errors)
+    error = np.sum(np.linalg.norm(data - model[indices], axis=1) ** 2)
+    return error
 
 
 def icp(data_set_points, model_set_points, model_normals, init_pose=None, max_iterations=20, tolerance=0.001):
@@ -167,15 +167,15 @@ def icp(data_set_points, model_set_points, model_normals, init_pose=None, max_it
         data = np.dot(init_pose, data)
 
     for i in range(max_iterations):
-        distances, indices = search_nearest_neighbors(data, model)
+        distances, indices = search_nearest_neighbors(data[:m, :].T, model[:m, :].T)
 
-        error = p_to_p_min(data, model, indices)
+        error = p_to_p_min(data[:m, :].T, model[:m, :].T, indices)
         if error < tolerance:
             break
 
-        T, _, __ = search_optimal_transform(data[:m, :].T, model[:m, :].T)
-        data = np.dot(T, data)
-        # search_optimal_transform_with_normals(data, model, model_normals, indices)
+        # T, _, __ = search_optimal_transform(data[:m, :].T, model[:m, :].T)
+        # data = np.dot(T, data)
+        x_opt = search_optimal_transform_with_normals(data[:m, :].T, model[:m, :].T, model_normals, indices)
         draw_set_points_clouds(model[:m, :].T, data[:m, :].T)
 
     T, _, __ = search_optimal_transform(data_set_points, data[:m, :].T)
@@ -264,7 +264,7 @@ def main():
         model_set, model_normals = make_points_ellipsoid()
         # draw_points_cloud(model_set, normals=model_normals, color='r', marker='o')
         data_set, _ = make_points_ellipsoid(center=[0.5, 0.5, 0.4])
-    draw_set_points_clouds(model_set, data_set)
+    # draw_set_points_clouds(model_set, data_set)
     transform_matrix, number_iteration = icp(model_set, data_set, model_normals)
     print(transform_matrix, number_iteration)
 
