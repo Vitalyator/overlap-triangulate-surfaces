@@ -119,6 +119,28 @@ def search_optimal_transform(data, model):
     return T, R, t
 
 
+def calculate_m_opt(x_opt):
+    alpha, betta, gamma, t_x, t_y, t_z = tuple(x_opt)
+    theta_ang = np.sum(x_opt[:3])
+    if theta_ang < 0.00001:
+        T = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
+    else:
+        a_11 = np.cos(gamma) * np.cos(betta)
+        a_12 = -np.sin(gamma) * np.cos(alpha) + np.cos(gamma) * np.sin(betta) * np.sin(alpha)
+        a_13 = np.sin(gamma) * np.sin(alpha) + np.cos(gamma) * np.sin(betta) * np.cos(alpha)
+        a_21 = np.sin(gamma) * np.cos(betta)
+        a_22 = np.cos(gamma) * np.cos(alpha) + np.sin(gamma) * np.sin(betta) * np.sin(alpha)
+        a_23 = -np.cos(gamma) * np.sin(alpha) + np.sin(gamma) * np.sin(betta) * np.cos(alpha)
+        a_31 = -np.sin(betta)
+        a_32 = np.cos(betta) * np.sin(alpha)
+        a_33 = np.cos(betta) * np.cos(alpha)
+        T = np.array([[a_11, a_12, a_13, 0],
+                      [a_21, a_22, a_23, 0],
+                      [a_31, a_32, a_33, 0],
+                      [0, 0, 0, 1]])
+    return T.reshape(4, 4)
+
+
 def search_optimal_transform_with_normals(data, model, normals_model, indices):
     """
 
@@ -145,7 +167,8 @@ def search_optimal_transform_with_normals(data, model, normals_model, indices):
     S_inverse = np.linalg.inv(matr_s)
     A_pse_inverse = np.dot(np.dot(Vt, S_inverse), U.T)
     x_opt = np.dot(A_pse_inverse, b)
-    return x_opt
+    M = calculate_m_opt(x_opt)
+    return M
 
 
 def p_to_p_min(data, model, indices):
@@ -174,8 +197,8 @@ def icp(data_set_points, model_set_points, model_normals, init_pose=None, max_it
             break
 
         # T, _, __ = search_optimal_transform(data[:m, :].T, model[:m, :].T)
-        # data = np.dot(T, data)
-        x_opt = search_optimal_transform_with_normals(data[:m, :].T, model[:m, :].T, model_normals, indices)
+        T = search_optimal_transform_with_normals(data[:m, :].T, model[:m, :].T, model_normals, indices)
+        data = np.dot(T, data)
         draw_set_points_clouds(model[:m, :].T, data[:m, :].T)
 
     T, _, __ = search_optimal_transform(data_set_points, data[:m, :].T)
@@ -264,7 +287,7 @@ def main():
         model_set, model_normals = make_points_ellipsoid()
         # draw_points_cloud(model_set, normals=model_normals, color='r', marker='o')
         data_set, _ = make_points_ellipsoid(center=[0.5, 0.5, 0.4])
-    # draw_set_points_clouds(model_set, data_set)
+    draw_set_points_clouds(model_set, data_set)
     transform_matrix, number_iteration = icp(model_set, data_set, model_normals)
     print(transform_matrix, number_iteration)
 
