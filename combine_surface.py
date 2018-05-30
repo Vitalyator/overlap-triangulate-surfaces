@@ -157,7 +157,7 @@ def search_optimal_transform_with_normals(data, model, normals_model, indices):
     m = data.shape[1]
 
     model = model[indices]
-    normals_model[indices]
+    normals_model = normals_model[indices]
 
     b = np.diag(np.dot(normals_model, model.T)) - np.diag(np.dot(normals_model, data.T))
     a = np.cross(data, normals_model)
@@ -165,7 +165,7 @@ def search_optimal_transform_with_normals(data, model, normals_model, indices):
     U, S, Vt = np.linalg.svd(A, full_matrices=False)
     matr_s = np.diagflat(S)
     S_inverse = np.linalg.inv(matr_s)
-    A_pse_inverse = np.dot(np.dot(Vt, S_inverse), U.T)
+    A_pse_inverse = np.dot(np.dot(Vt.T, S_inverse), U.T)
     x_opt = np.dot(A_pse_inverse, b)
     M = calculate_m_opt(x_opt)
     return M
