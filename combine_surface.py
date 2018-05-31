@@ -1,14 +1,12 @@
 import numpy as np
 import os
 from sklearn.neighbors import NearestNeighbors
-# from pyntcloud import PyntCloud
 import matplotlib.pyplot as plt
-import matplotlib.tri as mtri
 from mpl_toolkits.mplot3d import Axes3D
 from collections import defaultdict
 from datetime import datetime
 import argparse
-from sympy import diff, symbols, sin, cos
+from mpl_toolkits.mplot3d import axes3d
 
 
 def randrange(n, vmin, vmax):
@@ -58,9 +56,10 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
 
 def draw_points_cloud(points, normals=None, color='r', marker='o'):
     fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    if points.shape[0] > 1000:
-        step = int(points.shape[0] / 1000)
+    ax = Axes3D(fig)
+    step = 1
+    while len(points[::step]) > 1600:
+        step += 1
     ax.scatter(points[::step, 0], points[::step, 1], points[::step, 2], c=color, marker=marker, s=3)
     if normals is not None:
         normals = points + normals / 100
@@ -91,9 +90,9 @@ def search_nearest_neighbors(data_set, model_set):
     return distances.ravel(), indices.ravel()
 
 
-def search_optimal_transform(data, model):
+def p_to_point_min_func(data, model, normals_model, indices):
     assert data.shape == model.shape
-
+    model = model[indices]
     m = data.shape[1]
 
     centroid_data = np.mean(data, axis=0)
@@ -116,13 +115,13 @@ def search_optimal_transform(data, model):
     T[:m, :m] = R
     T[:m, m] = t
 
-    return T, R, t
+    return T
 
 
 def calculate_m_opt(x_opt):
     alpha, betta, gamma, t_x, t_y, t_z = tuple(x_opt)
     theta_ang = np.sum(x_opt[:3])
-    if theta_ang < 0.00001:
+    if theta_ang < 0.000001:
         T = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
     else:
         a_11 = np.cos(gamma) * np.cos(betta)
@@ -141,7 +140,7 @@ def calculate_m_opt(x_opt):
     return T.reshape(4, 4)
 
 
-def search_optimal_transform_with_normals(data, model, normals_model, indices):
+def p_to_plane_min_func(data, model, normals_model, indices):
     """
 
     :param normals_model:
@@ -161,30 +160,39 @@ def search_optimal_transform_with_normals(data, model, normals_model, indices):
 
     b = np.diag(np.dot(normals_model, model.T)) - np.diag(np.dot(normals_model, data.T))
     a = np.cross(data, normals_model)
-    A = np.hstack((a, normals_model))
-    U, S, Vt = np.linalg.svd(A, full_matrices=False)
-    matr_s = np.diagflat(S)
-    S_inverse = np.linalg.inv(matr_s)
-    A_pse_inverse = np.dot(np.dot(Vt.T, S_inverse), U.T)
-    x_opt = np.dot(A_pse_inverse, b)
+    matrix_A = np.hstack((a, normals_model))
+    U, sigma, Vt = np.linalg.svd(matrix_A, full_matrices=False)
+    matrix_sigma = np.diagflat(sigma)
+    sigma_inverse = np.linalg.inv(matrix_sigma)
+    pse_inverse_matrix_A = np.dot(np.dot(Vt.T, sigma_inverse), U.T)
+    x_opt = np.dot(pse_inverse_matrix_A, b)
     M = calculate_m_opt(x_opt)
     return M
 
 
-def p_to_p_min(data, model, indices):
+def error_metric_p_to_point(data, model, normals_model, indices):
     error = np.sum(np.linalg.norm(data - model[indices], axis=1) ** 2)
     return error
 
 
-def icp(data_set_points, model_set_points, model_normals, init_pose=None, max_iterations=20, tolerance=0.001):
-    assert model_set_points.shape == data_set_points.shape
+def error_metric_p_to_plane(data, model, normals_model, indices):
+    error = np.sum(np.diag(np.dot((data - model[indices]), normals_model[indices].T)) ** 2)
+    return error
 
+
+def icp(data_set_points, model_set_points, normals_model, init_pose=None, max_iterations=20, tolerance=0.0001,
+        p_to_plane=False):
+    assert model_set_points.shape == data_set_points.shape
     m = model_set_points.shape[1]
+    minimize_function = p_to_plane_min_func if p_to_plane else p_to_point_min_func
+    error_metric = error_metric_p_to_plane if p_to_plane else error_metric_p_to_point
 
     model = np.ones((m + 1, model_set_points.shape[0]))
     data = np.ones((m + 1, model_set_points.shape[0]))
+    normals = np.zeros((m + 1, normals_model.shape[0]))
     model[:m, :] = np.copy(model_set_points.T)
     data[:m, :] = np.copy(data_set_points.T)
+    normals[:m, :] = np.copy(normals_model.T)
 
     if init_pose is not None:
         data = np.dot(init_pose, data)
@@ -192,18 +200,15 @@ def icp(data_set_points, model_set_points, model_normals, init_pose=None, max_it
     for i in range(max_iterations):
         distances, indices = search_nearest_neighbors(data[:m, :].T, model[:m, :].T)
 
-        error = p_to_p_min(data[:m, :].T, model[:m, :].T, indices)
+        error = error_metric(data[:m, :].T, model[:m, :].T, normals[:m, :].T, indices)
         if error < tolerance:
             break
 
-        # T, _, __ = search_optimal_transform(data[:m, :].T, model[:m, :].T)
-        T = search_optimal_transform_with_normals(data[:m, :].T, model[:m, :].T, model_normals, indices)
-        data = np.dot(T, data)
+        transformation = minimize_function(data[:m, :].T, model[:m, :].T, normals[:m, :].T, indices)
+        data = np.dot(transformation, data)
         draw_set_points_clouds(model[:m, :].T, data[:m, :].T)
 
-    T, _, __ = search_optimal_transform(data_set_points, data[:m, :].T)
-
-    return T, i
+    return data
 
 
 def argument_parse():
@@ -285,11 +290,11 @@ def main():
         data_set, _ = extract_points_cloud(args.s)
     else:
         model_set, model_normals = make_points_ellipsoid()
-        # draw_points_cloud(model_set, normals=model_normals, color='r', marker='o')
+        # draw_points_cloud(model_set, color='r', marker='o')
         data_set, _ = make_points_ellipsoid(center=[0.5, 0.5, 0.4])
-    draw_set_points_clouds(model_set, data_set)
-    transform_matrix, number_iteration = icp(model_set, data_set, model_normals)
-    print(transform_matrix, number_iteration)
+    # draw_set_points_clouds(model_set, data_set)
+    number_iteration = icp(model_set, data_set, model_normals, p_to_plane=True)
+    print(number_iteration)
 
 
 if __name__ == '__main__':
