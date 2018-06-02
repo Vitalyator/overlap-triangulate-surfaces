@@ -6,7 +6,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from collections import defaultdict
 from datetime import datetime
 import argparse
-from mpl_toolkits.mplot3d import axes3d
 
 
 def randrange(n, vmin, vmax):
@@ -14,10 +13,10 @@ def randrange(n, vmin, vmax):
     Helper function to make an array of random numbers having shape (n, )
     with each number distributed Uniform(vmin, vmax).
     '''
-    return (vmax - vmin)*np.random.rand(n) + vmin
+    return (vmax - vmin) * np.random.rand(n) + vmin
 
 
-def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud):
+def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output_path, file_name='sample_plot'):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(model_set_points_cloud[:, 0], model_set_points_cloud[:, 1], model_set_points_cloud[:, 2],
@@ -27,8 +26,8 @@ def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud):
     ax.set_xlabel('X Label')
     ax.set_ylabel('Y Label')
     ax.set_zlabel('Z Label')
-
-    plt.show()
+    plt.savefig(os.path.join(output_path, file_name))
+    # plt.show()
 
 
 def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
@@ -54,7 +53,7 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
     return points.reshape((-1, 3)), normals.reshape((-1, 3))
 
 
-def draw_points_cloud(points, normals=None, color='r', marker='o'):
+def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     fig = plt.figure()
     ax = Axes3D(fig)
     step = 1
@@ -69,8 +68,32 @@ def draw_points_cloud(points, normals=None, color='r', marker='o'):
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
+    plt.savefig(os.path.join(output_path, 'model'))
+    # plt.show()
 
-    plt.show()
+
+def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_graphic='plot', sum_values=False):
+    fig = plt.figure()
+    if sum_values:
+        summed_values = []
+        for i in range(1, len(p_plane_results) + 1):
+            summed_values.append(sum(p_plane_results[:i]))
+        p_plane_results = summed_values
+        summed_values = []
+        for i in range(1, len(p_point_results) + 1):
+            summed_values.append(sum(p_point_results[:i]))
+        p_point_results = summed_values
+    ax1 = fig.add_subplot(111)
+    ax1.set(xlabel='iterations', ylabel='error (euclid distance)',
+            title=name_graphic, xticks=range(0, max(len(p_point_results), len(p_plane_results)) + 1))
+    ax1.plot(range(len(p_plane_results)), p_plane_results, color='red', marker='o', linestyle='dashed',
+             linewidth=2, markersize=5, label='point_to_plane_minimization')
+    ax1.plot(range(len(p_point_results)), p_point_results, color='blue', marker='+', linestyle='dashed',
+             linewidth=2, markersize=10, label='point_to_point_minimization')
+    ax1.legend()
+    ax1.grid()
+    plt.savefig(os.path.join(output_path, name_graphic))
+    # plt.show()
 
 
 def search_nearest_neighbors(data_set, model_set):
@@ -106,12 +129,12 @@ def p_to_point_min_func(data, model, normals_model, indices):
     R = np.dot(Vt.T, U.T)
 
     if np.linalg.det(R) < 0:
-        Vt[m-1, :] *= -1
+        Vt[m - 1, :] *= -1
         R = np.dot(Vt.T, U.t)
 
     t = centroid_model.T - np.dot(R, centroid_data.T)
 
-    T = np.identity(m+1)
+    T = np.identity(m + 1)
     T[:m, :m] = R
     T[:m, m] = t
 
@@ -121,7 +144,7 @@ def p_to_point_min_func(data, model, normals_model, indices):
 def calculate_m_opt(x_opt):
     alpha, betta, gamma, t_x, t_y, t_z = tuple(x_opt)
     theta_ang = np.sum(x_opt[:3])
-    if theta_ang < 0.000001:
+    if theta_ang < 0.00001:
         T = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
     else:
         a_11 = np.cos(gamma) * np.cos(betta)
@@ -158,7 +181,7 @@ def p_to_plane_min_func(data, model, normals_model, indices):
     model = model[indices]
     normals_model = normals_model[indices]
 
-    b = np.diag(np.dot(normals_model, model.T)) - np.diag(np.dot(normals_model, data.T))
+    b = scalar_vectors(model, normals_model) - scalar_vectors(data, normals_model,)
     a = np.cross(data, normals_model)
     matrix_A = np.hstack((a, normals_model))
     U, sigma, Vt = np.linalg.svd(matrix_A, full_matrices=False)
@@ -176,16 +199,28 @@ def error_metric_p_to_point(data, model, normals_model, indices):
 
 
 def error_metric_p_to_plane(data, model, normals_model, indices):
-    error = np.sum(np.diag(np.dot((data - model[indices]), normals_model[indices].T)) ** 2)
+    error = scalar_vectors(data - model[indices], normals_model[indices])
+    error = sum(error ** 2)
     return error
 
 
-def icp(data_set_points, model_set_points, normals_model, init_pose=None, max_iterations=20, tolerance=0.0001,
+def scalar_vectors(vectors, normals):
+    scalars = np.empty(vectors.shape[0])
+    for i in range(vectors.shape[0]):
+        scalars[i] = np.vdot(vectors[i], normals[i])
+    return scalars
+
+
+def icp(data_set_points, model_set_points, normals_model, output_path, init_pose=None, max_iterations=20, tolerance=0.00001,
         p_to_plane=False):
     assert model_set_points.shape == data_set_points.shape
+    mean_distance_errors = []
+    errors = []
+    time_spend = []
     m = model_set_points.shape[1]
     minimize_function = p_to_plane_min_func if p_to_plane else p_to_point_min_func
     error_metric = error_metric_p_to_plane if p_to_plane else error_metric_p_to_point
+    error_name = 'point_to_plane' if p_to_plane else 'point_to_point'
 
     model = np.ones((m + 1, model_set_points.shape[0]))
     data = np.ones((m + 1, model_set_points.shape[0]))
@@ -196,27 +231,27 @@ def icp(data_set_points, model_set_points, normals_model, init_pose=None, max_it
 
     if init_pose is not None:
         data = np.dot(init_pose, data)
-
     for i in range(max_iterations):
         distances, indices = search_nearest_neighbors(data[:m, :].T, model[:m, :].T)
-
+        mean_distance_errors.append(np.mean(distances))
         error = error_metric(data[:m, :].T, model[:m, :].T, normals[:m, :].T, indices)
+        errors.append(error)
         if error < tolerance:
             break
 
+        start = datetime.now()
         transformation = minimize_function(data[:m, :].T, model[:m, :].T, normals[:m, :].T, indices)
+        time_spend.append((datetime.now() - start).total_seconds())
         data = np.dot(transformation, data)
-        draw_set_points_clouds(model[:m, :].T, data[:m, :].T)
+        draw_set_points_clouds(model[:m, :].T, data[:m, :].T, output_path, file_name='%s_iteration_%d' % (error_name, i))
 
-    return data
+    return mean_distance_errors, errors, time_spend
 
 
 def argument_parse():
     argument_parser = argparse.ArgumentParser(description='Script combine two points cloud in 3 dimensional space '
                                                           'with used algorithm ICP on .ply-files')
     argument_parser.add_argument('-m', type=str, default='', help='input path to .ply-file with model set for compare, '
-                                                                  '(default used random points of cloud')
-    argument_parser.add_argument('-s', type=str, default='', help='input path to .ply-file with data set, '
                                                                   '(default used random points of cloud')
     argument_parser.add_argument('-o', type=str, default='/tmp/compare_results/', help='output path to result')
     args = argument_parser.parse_args()
@@ -283,18 +318,24 @@ def main():
     model_set = None
     data_set = None
     model_normals = None
-    if os.path.isfile(args.m) and os.path.isfile(args.s):
+    if os.path.isfile(args.m):
         model_set, model_faces = extract_points_cloud(args.m)
         model_normals = generate_normals(model_set, model_faces)
-        draw_points_cloud(model_set, normals=model_normals, color='r', marker='o')
-        data_set, _ = extract_points_cloud(args.s)
+        draw_points_cloud(model_set, args.o, normals=model_normals, color='r', marker='o')
+        data_set = model_set.copy()
+        data_set[:, 2] = data_set[:, 2] - 0.01
     else:
         model_set, model_normals = make_points_ellipsoid()
-        # draw_points_cloud(model_set, color='r', marker='o')
+        draw_points_cloud(model_set, args.o, color='r', marker='o')
         data_set, _ = make_points_ellipsoid(center=[0.5, 0.5, 0.4])
-    # draw_set_points_clouds(model_set, data_set)
-    number_iteration = icp(model_set, data_set, model_normals, p_to_plane=True)
-    print(number_iteration)
+    draw_set_points_clouds(model_set, data_set, args.o, file_name='model_and_data_set')
+    p_plane_results = icp(model_set, data_set, model_normals, args.o, p_to_plane=True)
+    p_point_results = icp(model_set, data_set, model_normals, args.o, p_to_plane=False)
+    draw_analyze_graphic(p_plane_results[0], p_point_results[0], output_path=args.o,
+                         name_graphic='mean distance corresponding points')
+    draw_analyze_graphic(p_plane_results[1], p_point_results[1], output_path=args.o, name_graphic='metric_error')
+    draw_analyze_graphic(p_plane_results[2], p_point_results[2], output_path=args.o,
+                         name_graphic='time_spend', sum_values=True)
 
 
 if __name__ == '__main__':
