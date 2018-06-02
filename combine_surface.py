@@ -8,12 +8,11 @@ from datetime import datetime
 import argparse
 
 
-def randrange(n, vmin, vmax):
-    '''
-    Helper function to make an array of random numbers having shape (n, )
-    with each number distributed Uniform(vmin, vmax).
-    '''
-    return (vmax - vmin) * np.random.rand(n) + vmin
+BUNNY = 'bunny'
+ELLIPSOID = 'ellipsoid'
+SINUSOID = 'sinusoid'
+PATH_TO_FILE_BUNNY = '/home/vitaliy/media/bunny.ply'
+ROTATE = 'translation_rotate'
 
 
 def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output_path, file_name='sample_plot'):
@@ -27,7 +26,11 @@ def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output
     ax.set_ylabel('Y Label')
     ax.set_zlabel('Z Label')
     plt.savefig(os.path.join(output_path, file_name))
-    # plt.show()
+    plt.show()
+
+
+def make_points_sinusoid():
+    pass
 
 
 def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
@@ -40,7 +43,6 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
             x = center[0] + a * np.sin(v) * np.cos(u)
             y = center[1] + b * np.sin(v) * np.sin(u)
             z = center[2] + c * np.cos(v)
-            points = np.append(points, np.array([[x, y, z]]))
             dx_u = -a * np.sin(u) * np.sin(v)
             dx_v = a * np.cos(u) * np.cos(v)
             dy_u = b * np.sin(v) * np.cos(u)
@@ -48,7 +50,10 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
             dz_u = 0
             dz_v = -c * np.sin(v)
             normal = np.cross(np.array([[dx_u, dy_u, dz_u]]), np.array([[dx_v, dy_v, dz_v]]))
-            normal = normal / np.linalg.norm(normal) if np.linalg.norm(normal) != 0 else normal
+            if np.linalg.norm(normal) == 0:
+                continue
+            points = np.append(points, np.array([[x, y, z]]))
+            normal = normal / np.linalg.norm(normal)
             normals = np.append(normals, normal)
     return points.reshape((-1, 3)), normals.reshape((-1, 3))
 
@@ -69,7 +74,7 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     plt.savefig(os.path.join(output_path, 'model'))
-    # plt.show()
+    plt.show()
 
 
 def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_graphic='plot', sum_values=False):
@@ -93,7 +98,7 @@ def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_gra
     ax1.legend()
     ax1.grid()
     plt.savefig(os.path.join(output_path, name_graphic))
-    # plt.show()
+    plt.show()
 
 
 def search_nearest_neighbors(data_set, model_set):
@@ -141,25 +146,30 @@ def p_to_point_min_func(data, model, normals_model, indices):
     return T
 
 
+def translation_matrix(alpha, betta, gamma):
+    a_11 = np.cos(gamma) * np.cos(betta)
+    a_12 = -np.sin(gamma) * np.cos(alpha) + np.cos(gamma) * np.sin(betta) * np.sin(alpha)
+    a_13 = np.sin(gamma) * np.sin(alpha) + np.cos(gamma) * np.sin(betta) * np.cos(alpha)
+    a_21 = np.sin(gamma) * np.cos(betta)
+    a_22 = np.cos(gamma) * np.cos(alpha) + np.sin(gamma) * np.sin(betta) * np.sin(alpha)
+    a_23 = -np.cos(gamma) * np.sin(alpha) + np.sin(gamma) * np.sin(betta) * np.cos(alpha)
+    a_31 = -np.sin(betta)
+    a_32 = np.cos(betta) * np.sin(alpha)
+    a_33 = np.cos(betta) * np.cos(alpha)
+    T = np.array([[a_11, a_12, a_13, 0],
+                  [a_21, a_22, a_23, 0],
+                  [a_31, a_32, a_33, 0],
+                  [0, 0, 0, 1]])
+    return T.reshape(4, 4)
+
+
 def calculate_m_opt(x_opt):
     alpha, betta, gamma, t_x, t_y, t_z = tuple(x_opt)
     theta_ang = np.sum(x_opt[:3])
     if theta_ang < 0.00001:
         T = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
     else:
-        a_11 = np.cos(gamma) * np.cos(betta)
-        a_12 = -np.sin(gamma) * np.cos(alpha) + np.cos(gamma) * np.sin(betta) * np.sin(alpha)
-        a_13 = np.sin(gamma) * np.sin(alpha) + np.cos(gamma) * np.sin(betta) * np.cos(alpha)
-        a_21 = np.sin(gamma) * np.cos(betta)
-        a_22 = np.cos(gamma) * np.cos(alpha) + np.sin(gamma) * np.sin(betta) * np.sin(alpha)
-        a_23 = -np.cos(gamma) * np.sin(alpha) + np.sin(gamma) * np.sin(betta) * np.cos(alpha)
-        a_31 = -np.sin(betta)
-        a_32 = np.cos(betta) * np.sin(alpha)
-        a_33 = np.cos(betta) * np.cos(alpha)
-        T = np.array([[a_11, a_12, a_13, 0],
-                      [a_21, a_22, a_23, 0],
-                      [a_31, a_32, a_33, 0],
-                      [0, 0, 0, 1]])
+        T = translation_matrix(alpha, betta, gamma)
     return T.reshape(4, 4)
 
 
@@ -211,7 +221,7 @@ def scalar_vectors(vectors, normals):
     return scalars
 
 
-def icp(data_set_points, model_set_points, normals_model, output_path, init_pose=None, max_iterations=20, tolerance=0.00001,
+def icp(data_set_points, model_set_points, normals_model, init_pose, output_path, max_iterations=20, tolerance=0.00001,
         p_to_plane=False):
     assert model_set_points.shape == data_set_points.shape
     mean_distance_errors = []
@@ -251,8 +261,12 @@ def icp(data_set_points, model_set_points, normals_model, output_path, init_pose
 def argument_parse():
     argument_parser = argparse.ArgumentParser(description='Script combine two points cloud in 3 dimensional space '
                                                           'with used algorithm ICP on .ply-files')
-    argument_parser.add_argument('-m', type=str, default='', help='input path to .ply-file with model set for compare, '
-                                                                  '(default used random points of cloud')
+    argument_parser.add_argument('--sample_figure',  choices=['ellipsoid, sinusoid, bunny'], default='ellipsoid',
+                                 help='Choose sample figure from list for work')
+    argument_parser.add_argument('--modification', choices=['translation', 'translation_rotate'], default='translation',
+                                 help='apply modification for data set points cloud')
+    argument_parser.add_argument('--noise', action='store_true',
+                                 help='add noise for data set points cloud')
     argument_parser.add_argument('-o', type=str, default='/tmp/compare_results/', help='output path to result')
     args = argument_parser.parse_args()
     return args
@@ -266,7 +280,6 @@ def extract_points_cloud(path_to_file):
     with open(path_to_file, 'rb') as ply_file:
         t_start = datetime.now()
         for line in ply_file.readlines():
-            # print(line)
             if b'vertices' in line:
                 n_points = int(line.split()[-1].decode())
                 continue
@@ -284,6 +297,18 @@ def extract_points_cloud(path_to_file):
     print(t_finish - t_start)
     points = points + np.abs(np.min(points))
     return points.reshape(n_points, 3), faces.reshape(n_faces, 3)
+
+
+def add_noise(data_set):
+    return data_set
+
+
+def modification_points(type_mod):
+    matrix_transportation = np.identity(4)
+    if type_mod == ROTATE:
+        matrix_transportation = translation_matrix(np.pi / 6, 0, 0)
+    matrix_transportation[:, -2:-1] = -0.1
+    return matrix_transportation
 
 
 def get_normal(p1, p2, p3):
@@ -318,19 +343,20 @@ def main():
     model_set = None
     data_set = None
     model_normals = None
-    if os.path.isfile(args.m):
-        model_set, model_faces = extract_points_cloud(args.m)
+    if args.sample_figure == BUNNY:
+        model_set, model_faces = extract_points_cloud(PATH_TO_FILE_BUNNY)
         model_normals = generate_normals(model_set, model_faces)
-        draw_points_cloud(model_set, args.o, normals=model_normals, color='r', marker='o')
-        data_set = model_set.copy()
-        data_set[:, 2] = data_set[:, 2] - 0.01
     else:
-        model_set, model_normals = make_points_ellipsoid()
-        draw_points_cloud(model_set, args.o, color='r', marker='o')
-        data_set, _ = make_points_ellipsoid(center=[0.5, 0.5, 0.4])
+        generation_function = make_points_ellipsoid if args.sample_figure == ELLIPSOID else make_points_sinusoid
+        model_set, model_normals = generation_function()
+    # draw_points_cloud(model_set, args.o, color='r', marker='o')
+    data_set = model_set.copy()
+    if args.noise:
+        data_set = add_noise(data_set)
+    init_pose = modification_points(args.modification)
     draw_set_points_clouds(model_set, data_set, args.o, file_name='model_and_data_set')
-    p_plane_results = icp(model_set, data_set, model_normals, args.o, p_to_plane=True)
-    p_point_results = icp(model_set, data_set, model_normals, args.o, p_to_plane=False)
+    p_plane_results = icp(model_set, data_set, model_normals, init_pose, args.o, p_to_plane=True)
+    p_point_results = icp(model_set, data_set, model_normals, init_pose, args.o, p_to_plane=False)
     draw_analyze_graphic(p_plane_results[0], p_point_results[0], output_path=args.o,
                          name_graphic='mean distance corresponding points')
     draw_analyze_graphic(p_plane_results[1], p_point_results[1], output_path=args.o, name_graphic='metric_error')
