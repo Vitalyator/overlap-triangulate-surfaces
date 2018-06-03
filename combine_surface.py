@@ -7,7 +7,6 @@ from collections import defaultdict
 from datetime import datetime
 import argparse
 
-
 BUNNY = 'bunny'
 ELLIPSOID = 'ellipsoid'
 SINUSOID = 'sinusoid'
@@ -15,22 +14,23 @@ PATH_TO_FILE_BUNNY = '/home/vitaliy/media/bunny.ply'
 ROTATE = 'translation_rotate'
 
 
-def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output_path, file_name='sample_plot'):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(model_set_points_cloud[:, 0], model_set_points_cloud[:, 1], model_set_points_cloud[:, 2],
-               c='r', marker='o')
-    ax.scatter(data_set_points_cloud[:, 0], data_set_points_cloud[:, 1], data_set_points_cloud[:, 2],
-               c='b', marker='+')
-    ax.set_xlabel('X Label')
-    ax.set_ylabel('Y Label')
-    ax.set_zlabel('Z Label')
-    plt.savefig(os.path.join(output_path, file_name))
-    plt.show()
-
-
 def make_points_sinusoid():
-    pass
+    x = np.arange(-10, 10, 0.3)
+    y = np.arange(-10, 10, 0.3)
+    xgrid, ygrid = np.meshgrid(x, y)
+    zgrid = np.sin(xgrid) * np.sin(ygrid) / (xgrid * ygrid)
+    points = np.array([xgrid.ravel(), ygrid.ravel(), zgrid.ravel()]).T
+    df_x = np.sin(ygrid) / (xgrid * ygrid) * np.cos(xgrid) - np.sin(xgrid) / (xgrid ** 2 * ygrid) * np.sin(ygrid)
+    df_y = np.sin(xgrid) / (ygrid * xgrid) * np.cos(ygrid) - np.sin(ygrid) / (ygrid ** 2 * xgrid) * np.sin(xgrid)
+    df_z = np.empty(xgrid.shape)
+    df_z[:] = -1
+    normals = np.array([df_x.ravel(), df_y.ravel(), zgrid.ravel()]).T
+    norms = np.linalg.norm(normals, axis=1)
+    for i in range(normals.shape[0]):
+        normals[i] = normals[i] / norms[i]
+    points = (points + np.abs(np.min(points)))
+    points = points / np.max(points) if np.max(points) > 1 else points
+    return points, normals
 
 
 def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
@@ -58,6 +58,21 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
     return points.reshape((-1, 3)), normals.reshape((-1, 3))
 
 
+def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output_path, file_name='sample_plot'):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(model_set_points_cloud[:, 0], model_set_points_cloud[:, 1], model_set_points_cloud[:, 2],
+               c='r', marker='o')
+    ax.scatter(data_set_points_cloud[:, 0], data_set_points_cloud[:, 1], data_set_points_cloud[:, 2],
+               c='b', marker='+')
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+    plt.savefig(os.path.join(output_path, file_name))
+    plt.close()
+    # plt.show()
+
+
 def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     fig = plt.figure()
     ax = Axes3D(fig)
@@ -74,7 +89,8 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     plt.savefig(os.path.join(output_path, 'model'))
-    plt.show()
+    plt.close()
+    # plt.show()
 
 
 def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_graphic='plot', sum_values=False):
@@ -135,7 +151,7 @@ def p_to_point_min_func(data, model, normals_model, indices):
 
     if np.linalg.det(R) < 0:
         Vt[m - 1, :] *= -1
-        R = np.dot(Vt.T, U.t)
+        R = np.dot(Vt.T, U.T)
 
     t = centroid_model.T - np.dot(R, centroid_data.T)
 
@@ -191,7 +207,7 @@ def p_to_plane_min_func(data, model, normals_model, indices):
     model = model[indices]
     normals_model = normals_model[indices]
 
-    b = scalar_vectors(model, normals_model) - scalar_vectors(data, normals_model,)
+    b = scalar_vectors(model, normals_model) - scalar_vectors(data, normals_model, )
     a = np.cross(data, normals_model)
     matrix_A = np.hstack((a, normals_model))
     U, sigma, Vt = np.linalg.svd(matrix_A, full_matrices=False)
@@ -241,6 +257,9 @@ def icp(data_set_points, model_set_points, normals_model, init_pose, output_path
 
     if init_pose is not None:
         data = np.dot(init_pose, data)
+
+    draw_set_points_clouds(model[:m, :].T, data[:m, :].T, output_path, file_name='model_and_data_set')
+
     for i in range(max_iterations):
         distances, indices = search_nearest_neighbors(data[:m, :].T, model[:m, :].T)
         mean_distance_errors.append(np.mean(distances))
@@ -253,7 +272,8 @@ def icp(data_set_points, model_set_points, normals_model, init_pose, output_path
         transformation = minimize_function(data[:m, :].T, model[:m, :].T, normals[:m, :].T, indices)
         time_spend.append((datetime.now() - start).total_seconds())
         data = np.dot(transformation, data)
-        draw_set_points_clouds(model[:m, :].T, data[:m, :].T, output_path, file_name='%s_iteration_%d' % (error_name, i))
+        draw_set_points_clouds(model[:m, :].T, data[:m, :].T, output_path,
+                               file_name='%s_iteration_%d' % (error_name, i))
 
     return mean_distance_errors, errors, time_spend
 
@@ -261,7 +281,7 @@ def icp(data_set_points, model_set_points, normals_model, init_pose, output_path
 def argument_parse():
     argument_parser = argparse.ArgumentParser(description='Script combine two points cloud in 3 dimensional space '
                                                           'with used algorithm ICP on .ply-files')
-    argument_parser.add_argument('--sample_figure',  choices=['ellipsoid, sinusoid, bunny'], default='ellipsoid',
+    argument_parser.add_argument('--sample_figure', choices=['ellipsoid', 'sinusoid', 'bunny'], default='ellipsoid',
                                  help='Choose sample figure from list for work')
     argument_parser.add_argument('--modification', choices=['translation', 'translation_rotate'], default='translation',
                                  help='apply modification for data set points cloud')
@@ -306,8 +326,8 @@ def add_noise(data_set):
 def modification_points(type_mod):
     matrix_transportation = np.identity(4)
     if type_mod == ROTATE:
-        matrix_transportation = translation_matrix(np.pi / 6, 0, 0)
-    matrix_transportation[:, -2:-1] = -0.1
+        matrix_transportation = translation_matrix(np.pi / 150, 0, 0)
+    matrix_transportation[-2, -1] = -0.05
     return matrix_transportation
 
 
@@ -349,12 +369,11 @@ def main():
     else:
         generation_function = make_points_ellipsoid if args.sample_figure == ELLIPSOID else make_points_sinusoid
         model_set, model_normals = generation_function()
-    # draw_points_cloud(model_set, args.o, color='r', marker='o')
+    draw_points_cloud(model_set, args.o, color='r', marker='o')
     data_set = model_set.copy()
     if args.noise:
         data_set = add_noise(data_set)
     init_pose = modification_points(args.modification)
-    draw_set_points_clouds(model_set, data_set, args.o, file_name='model_and_data_set')
     p_plane_results = icp(model_set, data_set, model_normals, init_pose, args.o, p_to_plane=True)
     p_point_results = icp(model_set, data_set, model_normals, init_pose, args.o, p_to_plane=False)
     draw_analyze_graphic(p_plane_results[0], p_point_results[0], output_path=args.o,
