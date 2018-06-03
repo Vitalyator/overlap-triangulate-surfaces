@@ -12,9 +12,15 @@ ELLIPSOID = 'ellipsoid'
 SINUSOID = 'sinusoid'
 PATH_TO_FILE_BUNNY = '/home/vitaliy/media/bunny.ply'
 ROTATE = 'translation_rotate'
+ACCURACY = 0.001
 
 
 def make_points_sinusoid():
+    """
+    Генерирует точки и векторы нормали (к точкам) синусоидной плоскости,
+    задаваемый функцией z(x, y) = sin(x)sin(y)/xy
+    :return: Набор точек и нормалей к точкам
+    """
     x = np.arange(-10, 10, 0.3)
     y = np.arange(-10, 10, 0.3)
     xgrid, ygrid = np.meshgrid(x, y)
@@ -34,6 +40,17 @@ def make_points_sinusoid():
 
 
 def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
+    """
+    Генерирует точки и нормали (к точкам) эллипсоида, заданный параметрически
+    x = x_0 + a*sin(v)*cos(u)
+    y = y_0 + b*sin(v)*sin(u)
+    z = z_0 + c*cos(v)
+    :param center: Центр эллипсоида в 3-ой системе координат M_0{x_0, y_0, z_0}
+    :param a: Длина 1ой полуоси
+    :param b: Длина 2ой полуоси
+    :param c: Длина 3ей полуоси
+    :return: Набор точек и нормалей к точкам
+    """
     theta = np.linspace(-np.pi / 2, np.pi / 2, num=40)
     thi = np.linspace(0, 2 * np.pi, num=40)
     points = np.empty(0)
@@ -59,6 +76,14 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
 
 
 def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output_path, file_name='sample_plot'):
+    """
+    Рисует график размещения исходной и целевой модели в 3мерной системе координат.
+    Сохраняет изображение в файл в формате *.png. Отображение моделей производится точками
+    :param model_set_points_cloud: Целевая массив точек (N x 3)
+    :param data_set_points_cloud: Исходная массив точек (N x 3)
+    :param output_path: Путь для сохранения графика
+    :param file_name: Название графика
+    """
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(model_set_points_cloud[:, 0], model_set_points_cloud[:, 1], model_set_points_cloud[:, 2],
@@ -74,6 +99,15 @@ def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output
 
 
 def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
+    """
+    Рисует график модели в 3мерной системе координат.
+    Сохраняет изображение в файл в формате *.png. Отображение моделей производится точками
+    :param points: Массив точек
+    :param output_path: Путь для сохранения графика
+    :param normals: Режим отображения нормалей, опционально
+    :param color: Цвет точек
+    :param marker: Маркер точек
+    """
     fig = plt.figure()
     ax = Axes3D(fig)
     step = 1
@@ -94,6 +128,16 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
 
 
 def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_graphic='plot', sum_values=False):
+    """
+    Рисует анализирующий график значений за каждую итерацию алгоритма.
+    Сохраняет изображение в файл в формате *.png.
+    :param p_plane_results: Результаты выполнения метода "точка-плоскость" по каждой итерации
+    :param p_point_results: Результаты выполнения метода "точка-точка" по каждой итерации
+    :param output_path: Путь для сохранения графика
+    :param name_graphic: Название графика
+    :param sum_values: Режим суммирования значений за предыдущие итерации относительно текущей,
+     необязательный параметр
+    """
     fig = plt.figure()
     if sum_values:
         summed_values = []
@@ -119,10 +163,10 @@ def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_gra
 
 def search_nearest_neighbors(data_set, model_set):
     """
-
-    :param model_set:
-    :param data_set:
-    :return:
+    Алгоритм поиска ближайшего соседа (точек)
+    :param model_set: Целевой массив точек (N x 3)
+    :param data_set: Исходный массив точек (N x 3)
+    :return: Расстояния и указатели между ближайшими точками
     >>> sample_array = np.array([[1.0, 1.0, 0.0], [2.0, 2.0, 0.0], [3.0, 3.0, 0.0]])
     >>> dest_array = np.array([[2.0, 1.5, 0.0], [3.0, 2.5, 0.0],[1.0, 0.0, 0.0]])
     >>> search_nearest_neighbors(sample_array, dest_array)
@@ -135,6 +179,14 @@ def search_nearest_neighbors(data_set, model_set):
 
 
 def p_to_point_min_func(data, model, normals_model, indices):
+    """
+    Алгоритм минимизации средне-квадратичной ошибки методом "точка-точка"
+    :param data: Исходный массив точек (N x 3)
+    :param model: Целевой массив точек (N x 3)
+    :param normals_model: Нормали к точкам из целевого массива (N x 3)
+    :param indices: Указатели на ближайшие точки
+    :return: Матрица преобразования
+    """
     assert data.shape == model.shape
     model = model[indices]
     m = data.shape[1]
@@ -163,6 +215,13 @@ def p_to_point_min_func(data, model, normals_model, indices):
 
 
 def translation_matrix(alpha, betta, gamma):
+    """
+    Формирование матрицы преобразования по заданным углам
+    :param alpha: Угол поворота вдоль оси oX
+    :param betta: Угол поворота вдоль оси oY
+    :param gamma: Угол поворота вдоль оси oZ
+    :return: Матрица поворота (4 x 4)
+    """
     a_11 = np.cos(gamma) * np.cos(betta)
     a_12 = -np.sin(gamma) * np.cos(alpha) + np.cos(gamma) * np.sin(betta) * np.sin(alpha)
     a_13 = np.sin(gamma) * np.sin(alpha) + np.cos(gamma) * np.sin(betta) * np.cos(alpha)
@@ -172,33 +231,39 @@ def translation_matrix(alpha, betta, gamma):
     a_31 = -np.sin(betta)
     a_32 = np.cos(betta) * np.sin(alpha)
     a_33 = np.cos(betta) * np.cos(alpha)
-    T = np.array([[a_11, a_12, a_13, 0],
+    translation = np.array([[a_11, a_12, a_13, 0],
                   [a_21, a_22, a_23, 0],
                   [a_31, a_32, a_33, 0],
                   [0, 0, 0, 1]])
-    return T.reshape(4, 4)
+    return translation.reshape(4, 4)
 
 
 def calculate_m_opt(x_opt):
+    """
+    Расчет матрицы преобразования по оптимальным параметрам, в случае небольшого угла поворота (< Pi / 6),
+    расчет матрицы преобразования упрощается
+    :param x_opt: Оптимальные параметры (6)
+    :return: Матрица преобразования (4 x 4)
+    """
     alpha, betta, gamma, t_x, t_y, t_z = tuple(x_opt)
     theta_ang = np.sum(x_opt[:3])
-    if theta_ang < 0.00001:
-        T = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
+    if theta_ang < np.pi / 6:
+        translation = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
     else:
-        T = translation_matrix(alpha, betta, gamma)
-    return T.reshape(4, 4)
+        translation = translation_matrix(alpha, betta, gamma)
+    if np.linalg.det(translation[:3, :3]) < 0:
+        print('wtf')
+    return translation.reshape(4, 4)
 
 
 def p_to_plane_min_func(data, model, normals_model, indices):
     """
-
-    :param normals_model:
-    :param data:
-    :param model:
-    :param indices:
-    :return:
-
-
+    Алгоритм минимизации средне-квадратичной ошибки методом "точка-плоскость"
+    :param data: Исходный массив точек (N x 3)
+    :param model: Целевой массив точек (N x 3)
+    :param indices: Указатели на ближайшие точки
+    :param normals_model: Нормали к точкам из целевого массива (N x 3)
+    :return: Матрица преобразования (4 x 4)
     """
     assert data.shape == model.shape
 
@@ -220,25 +285,63 @@ def p_to_plane_min_func(data, model, normals_model, indices):
 
 
 def error_metric_p_to_point(data, model, normals_model, indices):
+    """
+    Подсчет средне-квадратичной ошибки метода "точка-точка"
+    :param data: Исходный массив точек
+    :param model: Целевой массив точек
+    :param normals_model: Нормали к точкам из целевого массива
+    :param indices: Указатели к ближайшим точкам
+    :return:
+    """
     error = np.sum(np.linalg.norm(data - model[indices], axis=1) ** 2)
     return error
 
 
 def error_metric_p_to_plane(data, model, normals_model, indices):
+    """
+    Подсчет средне-квадратичной ошибки метода "точка-плоскость"
+    :param data: Исходный массив точек
+    :param model: Целевой массив точек
+    :param normals_model: Нормали к точкам из целевого массива
+    :param indices: Указатели к ближайшим точкам
+    :return:
+    """
     error = scalar_vectors(data - model[indices], normals_model[indices])
     error = sum(error ** 2)
     return error
 
 
 def scalar_vectors(vectors, normals):
+    """
+    Скалярное умножение векторов и нормалей
+    :param vectors: Массив векторов (N x 3)
+    :param normals: Массив нормалей (N x 3)
+    :return: Массив скалярных произведений (N)
+    """
     scalars = np.empty(vectors.shape[0])
     for i in range(vectors.shape[0]):
         scalars[i] = np.vdot(vectors[i], normals[i])
     return scalars
 
 
-def icp(data_set_points, model_set_points, normals_model, init_pose, output_path, max_iterations=20, tolerance=0.00001,
+def icp(data_set_points, model_set_points, normals_model, init_pose, tolerance, output_path, max_iterations=20,
         p_to_plane=False):
+    """
+    Итеративный алгоритм ближайших точек с применением методов наименьшего квадрата: "точка-точка", "точка-плоскость",
+    который совмещает два облака точек путем расчета оптимального преобразования для исходного набора точек
+    :param data_set_points: Исходный набор точек, массив точек (N x 3)
+    :param model_set_points: Целевой набор точек, массив точек (N x 3)
+    :param normals_model: Векторы нормалей к точкам из целевого набора, массив векторов (N x 3)
+    :param init_pose: Предварительное преобразование исходного набора точек (смещение, поворот)
+    :param tolerance: Допустимое значение ошибки, в случае, если ошибка меньше или равна указанного значения,
+    алгоритм заканчивает работу
+    :param output_path: Путь для сохранения изображений, совершенные на каждом шаге итерации
+    :param max_iterations: Максимальное количество итераций
+    :param p_to_plane: Режим использования метода минимизации, в случае его активации,
+     применяется метод "точка-плоскость", иначе "точка-точка"
+    :return: По каждой итерации возвращается среднее расстояние между ближайшими точками,
+    средне-квадратичная ошибка и затраченное время.
+    """
     assert model_set_points.shape == data_set_points.shape
     mean_distance_errors = []
     errors = []
@@ -262,10 +365,11 @@ def icp(data_set_points, model_set_points, normals_model, init_pose, output_path
 
     for i in range(max_iterations):
         distances, indices = search_nearest_neighbors(data[:m, :].T, model[:m, :].T)
-        mean_distance_errors.append(np.mean(distances))
+        mean_distance = np.mean(distances)
+        mean_distance_errors.append(mean_distance)
         error = error_metric(data[:m, :].T, model[:m, :].T, normals[:m, :].T, indices)
         errors.append(error)
-        if error < tolerance:
+        if mean_distance <= tolerance:
             break
 
         start = datetime.now()
@@ -278,21 +382,12 @@ def icp(data_set_points, model_set_points, normals_model, init_pose, output_path
     return mean_distance_errors, errors, time_spend
 
 
-def argument_parse():
-    argument_parser = argparse.ArgumentParser(description='Script combine two points cloud in 3 dimensional space '
-                                                          'with used algorithm ICP on .ply-files')
-    argument_parser.add_argument('--sample_figure', choices=['ellipsoid', 'sinusoid', 'bunny'], default='ellipsoid',
-                                 help='Choose sample figure from list for work')
-    argument_parser.add_argument('--modification', choices=['translation', 'translation_rotate'], default='translation',
-                                 help='apply modification for data set points cloud')
-    argument_parser.add_argument('--noise', action='store_true',
-                                 help='add noise for data set points cloud')
-    argument_parser.add_argument('-o', type=str, default='/tmp/compare_results/', help='output path to result')
-    args = argument_parser.parse_args()
-    return args
-
-
 def extract_points_cloud(path_to_file):
+    """
+    Извлекает координаты точек и полигоны из *.ply файла. Размещает координаты в квадрате [0,1]
+    :param path_to_file: Путь к ply-файлу
+    :return: Массив точек (N x 3) и полигонов (M x 3) в формате списка точек, образующих полигон
+    """
     points = np.empty(0)
     faces = np.empty(0, dtype='int')
     n_points = 0
@@ -320,10 +415,30 @@ def extract_points_cloud(path_to_file):
 
 
 def add_noise(data_set):
-    return data_set
+    """
+    Добавление шума к исходному массиву точек. Случайно выбирается N/100 точек для добавления шума
+    :param data_set: Исходный массив точек (N x 3)
+    :return: Зашумленный массив точек (N x 3)
+    """
+    noised_data_set = data_set.copy()
+    index = np.random.choice(range(noised_data_set.shape[0]), int(noised_data_set.shape[0] / 100))
+    for i in index:
+        for j, coordinate in enumerate(noised_data_set[i]):
+            noise_value = coordinate / 10 * np.random.random_sample()
+            if i % 2 == 0:
+                noise_value = -noise_value
+            noised_data_set[i][j] += noise_value
+    mean_distance = np.mean(noised_data_set - data_set) + ACCURACY
+    return data_set, mean_distance
 
 
 def modification_points(type_mod):
+    """
+    Формирует матрицу преобразования для предварительного изменения положения исходного массива точек
+    :param type_mod: Тип преобразования, в случае 'translate_rotate' формируется матрица перемещения и поворота,
+    по умолчанию, только перемещенения
+    :return: Матрица преобразования (4 x 4)
+    """
     matrix_transportation = np.identity(4)
     if type_mod == ROTATE:
         matrix_transportation = translation_matrix(np.pi / 150, 0, 0)
@@ -332,13 +447,26 @@ def modification_points(type_mod):
 
 
 def get_normal(p1, p2, p3):
+    """
+    Векторное произведение векторов по трем точкам
+    :param p1: 1ая точка
+    :param p2: 2ая точка
+    :param p3: 3я точка
+    :return: Вектор нормали
+    """
     v1 = p1 - p2
     v2 = p2 - p3
     normal = np.cross(v1, v2)
     return normal
 
 
-def generate_normals(model_set, model_faces=[]):
+def generate_normals(model_set, model_faces):
+    """
+    Генерирует нормали точек по прилежащим к ним полигонам
+    :param model_set: Целевой массив точек (N x 3)
+    :param model_faces: Массив списка указателей на точки, образующие полигон (M x 3)
+    :return: Массив нормалей к точкам из целевого массива (N x 3)
+    """
     closest_normals = defaultdict(list)
     normals_point = np.empty(0)
     if len(model_faces) == 0:
@@ -357,25 +485,50 @@ def generate_normals(model_set, model_faces=[]):
     return normals_point.reshape((-1, 3))
 
 
-def main():
-    args = argument_parse()
-    os.makedirs(args.o, exist_ok=True)
-    model_set = None
-    data_set = None
-    model_normals = None
-    if args.sample_figure == BUNNY:
+def extract_sets(sample_figure, output_path):
+    """
+    Формирует массивы точек для целевой и исходной модели. Выбор модели зависит от входного аргумента,
+    где на выбор прилагается следующие модели: эллипсоид, поверхность синусоида, отсканированный кролик,
+    по умолчанию эллипсоид
+    :param sample_figure: Модель из списка
+    :param output_path: Путь до файла для сохранения изображения
+    :return: Массивы (N x 3)  иссходных, целевых точек и нормалей (N x 3) к точкам из целевого массива
+    """
+    if sample_figure == BUNNY:
         model_set, model_faces = extract_points_cloud(PATH_TO_FILE_BUNNY)
         model_normals = generate_normals(model_set, model_faces)
     else:
-        generation_function = make_points_ellipsoid if args.sample_figure == ELLIPSOID else make_points_sinusoid
+        generation_function = make_points_ellipsoid if sample_figure == ELLIPSOID else make_points_sinusoid
         model_set, model_normals = generation_function()
-    draw_points_cloud(model_set, args.o, color='r', marker='o')
+    draw_points_cloud(model_set, output_path, color='r', marker='o')
     data_set = model_set.copy()
+    return model_set, model_normals, data_set
+
+
+def argument_parse():
+    argument_parser = argparse.ArgumentParser(description='Algorithm combine two points cloud in 3 dimensional space '
+                                                          'with used algorithm ICP and analyze results')
+    argument_parser.add_argument('--sample_figure', choices=['ellipsoid', 'sinusoid', 'bunny'], default='ellipsoid',
+                                 help='Choose sample figure from list for work')
+    argument_parser.add_argument('--modification', choices=['translation', 'translation_rotate'], default='translation',
+                                 help='apply modification for data set points cloud')
+    argument_parser.add_argument('--noise', action='store_true',
+                                 help='add noise for data set points cloud')
+    argument_parser.add_argument('-o', type=str, default='/tmp/compare_results/', help='output path to result')
+    args = argument_parser.parse_args()
+    return args
+
+
+def main():
+    args = argument_parse()
+    os.makedirs(args.o, exist_ok=True)
+    tolerance = ACCURACY
+    model_set, model_normals, data_set = extract_sets(args.sample_figure, args.o)
     if args.noise:
-        data_set = add_noise(data_set)
+        data_set, tolerance = add_noise(data_set)
     init_pose = modification_points(args.modification)
-    p_plane_results = icp(model_set, data_set, model_normals, init_pose, args.o, p_to_plane=True)
-    p_point_results = icp(model_set, data_set, model_normals, init_pose, args.o, p_to_plane=False)
+    p_plane_results = icp(model_set, data_set, model_normals, init_pose, tolerance, args.o, p_to_plane=True)
+    p_point_results = icp(model_set, data_set, model_normals, init_pose, tolerance, args.o, p_to_plane=False)
     draw_analyze_graphic(p_plane_results[0], p_point_results[0], output_path=args.o,
                          name_graphic='mean distance corresponding points')
     draw_analyze_graphic(p_plane_results[1], p_point_results[1], output_path=args.o, name_graphic='metric_error')
