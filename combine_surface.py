@@ -9,33 +9,32 @@ import argparse
 
 BUNNY = 'bunny'
 ELLIPSOID = 'ellipsoid'
-SINUSOID = 'sinusoid'
 PATH_TO_FILE_BUNNY = '/home/vitaliy/media/bunny.ply'
 ROTATE = 'translation_rotate'
 ACCURACY = 0.001
 
 
-def make_points_sinusoid():
+def make_points_paraboloid(a=0.2, b=0.1):
     """
-    Генерирует точки и векторы нормали (к точкам) синусоидной плоскости,
-    задаваемый функцией z(x, y) = sin(x)sin(y)/xy
-    :return: Набор точек и нормалей к точкам
+    Генерирует точки и нормали (к точкам) гиперболического параболоида, заданный функцией
+    x ** 2 / a ** 2 - y ** / b ** 2 = 2 * z
+    :param a: 1ый параметр
+    :param b: 2ой параметр
+    :return: Массив координат точек и векторов нормалей
     """
     x = np.arange(-10, 10, 0.3)
     y = np.arange(-10, 10, 0.3)
     xgrid, ygrid = np.meshgrid(x, y)
-    zgrid = np.sin(xgrid) * np.sin(ygrid) / (xgrid * ygrid)
-    points = np.array([xgrid.ravel(), ygrid.ravel(), zgrid.ravel()]).T
-    df_x = np.sin(ygrid) / (xgrid * ygrid) * np.cos(xgrid) - np.sin(xgrid) / (xgrid ** 2 * ygrid) * np.sin(ygrid)
-    df_y = np.sin(xgrid) / (ygrid * xgrid) * np.cos(ygrid) - np.sin(ygrid) / (ygrid ** 2 * xgrid) * np.sin(xgrid)
+    zgrid = xgrid ** 2 / (a ** 2 * 4) - ygrid ** 2 / (b ** 2 * 4)
+    df_x = xgrid / (a ** 2 * 2)
+    df_y = ygrid / (b ** 2 * 2)
     df_z = np.empty(xgrid.shape)
     df_z[:] = -1
     normals = np.array([df_x.ravel(), df_y.ravel(), zgrid.ravel()]).T
     norms = np.linalg.norm(normals, axis=1)
     for i in range(normals.shape[0]):
         normals[i] = normals[i] / norms[i]
-    points = (points + np.abs(np.min(points)))
-    points = points / np.max(points) if np.max(points) > 1 else points
+    points = np.array([xgrid.ravel(), ygrid.ravel(), zgrid.ravel()]).T
     return points, normals
 
 
@@ -49,7 +48,7 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
     :param a: Длина 1ой полуоси
     :param b: Длина 2ой полуоси
     :param c: Длина 3ей полуоси
-    :return: Набор точек и нормалей к точкам
+    :return: Массив координат точек и векторов нормалей к точкам
     """
     theta = np.linspace(-np.pi / 2, np.pi / 2, num=40)
     thi = np.linspace(0, 2 * np.pi, num=40)
@@ -115,7 +114,7 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
         step += 1
     ax.scatter(points[::step, 0], points[::step, 1], points[::step, 2], c=color, marker=marker, s=3)
     if normals is not None:
-        normals = points + normals / 100
+        normals = points + normals
         for i in range(0, points.shape[0], step):
             line = np.stack((points[i], normals[i]), axis=-1)
             ax.plot(line[0], line[1], line[2], 'g-')
@@ -123,11 +122,12 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     plt.savefig(os.path.join(output_path, 'model'))
-    plt.close()
-    # plt.show()
+    # plt.close()
+    plt.show()
 
 
-def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_graphic='plot', sum_values=False):
+def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_graphic='plot', sum_values=False,
+                         label='error (euclid distance)'):
     """
     Рисует анализирующий график значений за каждую итерацию алгоритма.
     Сохраняет изображение в файл в формате *.png.
@@ -137,6 +137,7 @@ def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_gra
     :param name_graphic: Название графика
     :param sum_values: Режим суммирования значений за предыдущие итерации относительно текущей,
      необязательный параметр
+    :param label: Подпись к оси Ох
     """
     fig = plt.figure()
     if sum_values:
@@ -149,7 +150,7 @@ def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_gra
             summed_values.append(sum(p_point_results[:i]))
         p_point_results = summed_values
     ax1 = fig.add_subplot(111)
-    ax1.set(xlabel='iterations', ylabel='error (euclid distance)',
+    ax1.set(xlabel='iterations', ylabel=label,
             title=name_graphic, xticks=range(0, max(len(p_point_results), len(p_plane_results)) + 1))
     ax1.plot(range(len(p_plane_results)), p_plane_results, color='red', marker='o', linestyle='dashed',
              linewidth=2, markersize=5, label='point_to_plane_minimization')
@@ -498,9 +499,9 @@ def extract_sets(sample_figure, output_path):
         model_set, model_faces = extract_points_cloud(PATH_TO_FILE_BUNNY)
         model_normals = generate_normals(model_set, model_faces)
     else:
-        generation_function = make_points_ellipsoid if sample_figure == ELLIPSOID else make_points_sinusoid
+        generation_function = make_points_ellipsoid if sample_figure == ELLIPSOID else make_points_paraboloid
         model_set, model_normals = generation_function()
-    draw_points_cloud(model_set, output_path, color='r', marker='o')
+    draw_points_cloud(model_set, output_path, color='r', marker='o', normals=model_normals)
     data_set = model_set.copy()
     return model_set, model_normals, data_set
 
@@ -508,7 +509,7 @@ def extract_sets(sample_figure, output_path):
 def argument_parse():
     argument_parser = argparse.ArgumentParser(description='Algorithm combine two points cloud in 3 dimensional space '
                                                           'with used algorithm ICP and analyze results')
-    argument_parser.add_argument('--sample_figure', choices=['ellipsoid', 'sinusoid', 'bunny'], default='ellipsoid',
+    argument_parser.add_argument('--sample_figure', choices=['ellipsoid', 'paraboloid', 'bunny'], default='ellipsoid',
                                  help='Choose sample figure from list for work')
     argument_parser.add_argument('--modification', choices=['translation', 'translation_rotate'], default='translation',
                                  help='apply modification for data set points cloud')
@@ -533,7 +534,7 @@ def main():
                          name_graphic='mean distance corresponding points')
     draw_analyze_graphic(p_plane_results[1], p_point_results[1], output_path=args.o, name_graphic='metric_error')
     draw_analyze_graphic(p_plane_results[2], p_point_results[2], output_path=args.o,
-                         name_graphic='time_spend', sum_values=True)
+                         name_graphic='time_spend', sum_values=True, label='time (milliseconds)')
 
 
 if __name__ == '__main__':
