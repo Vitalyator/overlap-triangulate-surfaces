@@ -11,7 +11,8 @@ BUNNY = 'bunny'
 ELLIPSOID = 'ellipsoid'
 PATH_TO_FILE_BUNNY = '/home/vitaliy/media/bunny.ply'
 ROTATE = 'translation_rotate'
-ACCURACY = 0.001
+ACCURACY = 0.0001
+TRANSLATE_VALUE = -0.1
 
 
 def make_points_paraboloid(a=0.2, b=0.1):
@@ -35,7 +36,7 @@ def make_points_paraboloid(a=0.2, b=0.1):
     for i in range(normals.shape[0]):
         normals[i] = normals[i] / norms[i]
     points = np.array([xgrid.ravel(), ygrid.ravel(), zgrid.ravel()]).T
-    points = points + np.abs(np.min(points)).T
+    points = points + np.abs(np.min(points))
     points = points / np.max(points)
     return points, normals
 
@@ -52,8 +53,8 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
     :param c: Длина 3ей полуоси
     :return: Массив координат точек и векторов нормалей к точкам
     """
-    theta = np.linspace(-np.pi / 2, np.pi / 2, num=40)
-    thi = np.linspace(0, 2 * np.pi, num=40)
+    theta = np.linspace(-np.pi / 2, np.pi / 2, num=50)
+    thi = np.linspace(0, 2 * np.pi, num=50)
     points = np.empty(0)
     normals = np.empty(0)
     for u in theta:
@@ -68,6 +69,8 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
             dz_u = 0
             dz_v = -c * np.sin(v)
             normal = np.cross(np.array([[dx_u, dy_u, dz_u]]), np.array([[dx_v, dy_v, dz_v]]))
+            if v < np.pi:
+                normal = -normal
             if np.linalg.norm(normal) == 0:
                 continue
             points = np.append(points, np.array([[x, y, z]]))
@@ -88,14 +91,16 @@ def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(model_set_points_cloud[:, 0], model_set_points_cloud[:, 1], model_set_points_cloud[:, 2],
-               c='r', marker='o')
+               c='r', marker='o', label='destination model')
     ax.scatter(data_set_points_cloud[:, 0], data_set_points_cloud[:, 1], data_set_points_cloud[:, 2],
-               c='b', marker='+')
+               c='b', marker='+', label='source model')
     ax.set_xlabel('X Label')
     ax.set_ylabel('Y Label')
     ax.set_zlabel('Z Label')
+    ax.legend()
     plt.savefig(os.path.join(output_path, file_name))
     plt.close()
+
 
 def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     """
@@ -122,32 +127,23 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     plt.savefig(os.path.join(output_path, 'model'))
+    # plt.show()
     plt.close()
 
 
-def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_graphic='plot', sum_values=False,
-                         label='error (euclid distance)'):
+def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_graphic='plot',
+                         label='error (euclid distance)', accuracy=None):
     """
     Рисует анализирующий график значений за каждую итерацию алгоритма.
     Сохраняет изображение в файл в формате *.png.
+    :param accuracy: Граничная ошибка
     :param p_plane_results: Результаты выполнения метода "точка-плоскость" по каждой итерации
     :param p_point_results: Результаты выполнения метода "точка-точка" по каждой итерации
     :param output_path: Путь для сохранения графика
     :param name_graphic: Название графика
-    :param sum_values: Режим суммирования значений за предыдущие итерации относительно текущей,
-     необязательный параметр
     :param label: Подпись к оси Ох
     """
     fig = plt.figure()
-    if sum_values:
-        summed_values = []
-        for i in range(1, len(p_plane_results) + 1):
-            summed_values.append(sum(p_plane_results[:i]))
-        p_plane_results = summed_values
-        summed_values = []
-        for i in range(1, len(p_point_results) + 1):
-            summed_values.append(sum(p_point_results[:i]))
-        p_point_results = summed_values
     ax1 = fig.add_subplot(111)
     ax1.set(xlabel='iterations', ylabel=label,
             title=name_graphic, xticks=range(0, max(len(p_point_results), len(p_plane_results)) + 1))
@@ -155,6 +151,10 @@ def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_gra
              linewidth=2, markersize=5, label='point_to_plane_minimization')
     ax1.plot(range(len(p_point_results)), p_point_results, color='blue', marker='+', linestyle='dashed',
              linewidth=2, markersize=10, label='point_to_point_minimization')
+    if accuracy is not None:
+        max_iterations = max(len(p_plane_results), len(p_point_results))
+        ax1.plot(range(max_iterations), [accuracy] * max_iterations, color='green')
+        plt.text(-0.5, accuracy, r'eps = %f' % accuracy)
     ax1.legend()
     ax1.grid()
     plt.savefig(os.path.join(output_path, name_graphic))
@@ -188,7 +188,7 @@ def p_to_point_min_func(data, model, normals_model, indices):
     :return: Матрица преобразования
     """
     assert data.shape == model.shape
-    model = model[indices]
+    data = data[indices]
     m = data.shape[1]
 
     centroid_data = np.mean(data, axis=0)
@@ -246,8 +246,8 @@ def calculate_m_opt(x_opt):
     :return: Матрица преобразования (4 x 4)
     """
     alpha, betta, gamma, t_x, t_y, t_z = tuple(x_opt)
-    theta_ang = np.sum(x_opt[:3])
-    # if theta_ang < np.pi / 18:
+    # theta_ang = np.sum(x_opt[:3])
+    # if theta_ang < 0.0000001:
     #     translation = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
     # else:
     translation = translation_matrix(alpha, betta, gamma)
@@ -268,10 +268,9 @@ def p_to_plane_min_func(data, model, normals_model, indices):
 
     m = data.shape[1]
 
-    model = model[indices]
-    normals_model = normals_model[indices]
+    data = data[indices]
 
-    b = scalar_vectors(model, normals_model) - scalar_vectors(data, normals_model, )
+    b = scalar_vectors(model, normals_model) - scalar_vectors(data, normals_model)
     a = np.cross(data, normals_model)
     matrix_A = np.hstack((a, normals_model))
     U, sigma, Vt = np.linalg.svd(matrix_A, full_matrices=False)
@@ -292,7 +291,7 @@ def error_metric_p_to_point(data, model, normals_model, indices):
     :param indices: Указатели к ближайшим точкам
     :return:
     """
-    error = np.sum(np.linalg.norm(data - model[indices], axis=1) ** 2)
+    error = np.sum(np.linalg.norm(data[indices] - model, axis=1) ** 2)
     return error
 
 
@@ -305,7 +304,7 @@ def error_metric_p_to_plane(data, model, normals_model, indices):
     :param indices: Указатели к ближайшим точкам
     :return:
     """
-    error = scalar_vectors(data - model[indices], normals_model[indices])
+    error = scalar_vectors(data[indices] - model, normals_model)
     error = sum(error ** 2)
     return error
 
@@ -361,7 +360,7 @@ def icp(model_set_points, data_set_points, normals_model, init_pose, tolerance, 
         data = np.dot(init_pose, data)
 
     draw_set_points_clouds(model[:m, :].T, data[:m, :].T, output_path, file_name='model_and_data_set')
-
+    start = datetime.now()
     for i in range(max_iterations):
         distances, indices = search_nearest_neighbors(data[:m, :].T, model[:m, :].T)
         mean_distance = np.mean(distances)
@@ -371,12 +370,11 @@ def icp(model_set_points, data_set_points, normals_model, init_pose, tolerance, 
         if mean_distance <= tolerance:
             break
 
-        start = datetime.now()
         transformation = minimize_function(data[:m, :].T, model[:m, :].T, normals[:m, :].T, indices)
-        time_spend.append((datetime.now() - start).total_seconds())
         data = np.dot(transformation, data)
         draw_set_points_clouds(model[:m, :].T, data[:m, :].T, output_path,
                                file_name='%s_iteration_%d' % (error_name, i))
+        time_spend.append((datetime.now() - start).total_seconds())
 
     return mean_distance_errors, errors, time_spend
 
@@ -427,7 +425,8 @@ def add_noise(data_set):
             if i % 2 == 0:
                 noise_value = -noise_value
             noised_data_set[i][j] += noise_value
-    mean_distance = np.mean(noised_data_set - data_set) + ACCURACY
+    distances, indices = search_nearest_neighbors(data_set, noised_data_set)
+    mean_distance = np.mean(distances) + ACCURACY
     return noised_data_set, mean_distance
 
 
@@ -440,8 +439,8 @@ def modification_points(type_mod):
     """
     matrix_transportation = np.identity(4)
     if type_mod == ROTATE:
-        matrix_transportation = translation_matrix(np.pi / 150, 0, 0)
-    matrix_transportation[-2, -1] = -0.1
+        matrix_transportation = translation_matrix(np.pi / 18, 0, 0)
+    matrix_transportation[-2, -1] = TRANSLATE_VALUE
     return matrix_transportation
 
 
@@ -533,10 +532,10 @@ def main():
     p_plane_results = icp(model_set, data_set, model_normals, init_pose, tolerance, output_path, p_to_plane=True)
     p_point_results = icp(model_set, data_set, model_normals, init_pose, tolerance, output_path, p_to_plane=False)
     draw_analyze_graphic(p_plane_results[0], p_point_results[0], output_path=output_path,
-                         name_graphic='mean distance corresponding points')
+                         name_graphic='mean distance corresponding points', accuracy=tolerance)
     draw_analyze_graphic(p_plane_results[1], p_point_results[1], output_path=output_path, name_graphic='metric_error')
     draw_analyze_graphic(p_plane_results[2], p_point_results[2], output_path=output_path,
-                         name_graphic='time_spend', sum_values=True, label='time (milliseconds)')
+                         name_graphic='time_spend', label='time (seconds)')
 
 
 if __name__ == '__main__':
