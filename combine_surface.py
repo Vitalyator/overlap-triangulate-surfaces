@@ -25,12 +25,12 @@ def make_points_paraboloid(a=0.2, b=0.1):
     x = np.arange(-10, 10, 0.3)
     y = np.arange(-10, 10, 0.3)
     xgrid, ygrid = np.meshgrid(x, y)
-    zgrid = xgrid ** 2 / (a ** 2 * 4) - ygrid ** 2 / (b ** 2 * 4)
+    zgrid = xgrid ** 2 / (a ** 2 * 4) + ygrid ** 2 / (b ** 2 * 4)
     df_x = xgrid / (a ** 2 * 2)
     df_y = ygrid / (b ** 2 * 2)
     df_z = np.empty(xgrid.shape)
     df_z[:] = -1
-    normals = np.array([df_x.ravel(), df_y.ravel(), zgrid.ravel()]).T
+    normals = np.array([df_x.ravel(), df_y.ravel(), df_z.ravel()]).T
     norms = np.linalg.norm(normals, axis=1)
     for i in range(normals.shape[0]):
         normals[i] = normals[i] / norms[i]
@@ -96,7 +96,6 @@ def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output
     ax.set_zlabel('Z Label')
     plt.savefig(os.path.join(output_path, file_name))
     plt.close()
-
 
 def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     """
@@ -233,9 +232,9 @@ def translation_matrix(alpha, betta, gamma):
     a_32 = np.cos(betta) * np.sin(alpha)
     a_33 = np.cos(betta) * np.cos(alpha)
     translation = np.array([[a_11, a_12, a_13, 0],
-                  [a_21, a_22, a_23, 0],
-                  [a_31, a_32, a_33, 0],
-                  [0, 0, 0, 1]])
+                            [a_21, a_22, a_23, 0],
+                            [a_31, a_32, a_33, 0],
+                            [0, 0, 0, 1]])
     return translation.reshape(4, 4)
 
 
@@ -248,12 +247,11 @@ def calculate_m_opt(x_opt):
     """
     alpha, betta, gamma, t_x, t_y, t_z = tuple(x_opt)
     theta_ang = np.sum(x_opt[:3])
-    if theta_ang < np.pi / 6:
-        translation = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
-    else:
-        translation = translation_matrix(alpha, betta, gamma)
-    if np.linalg.det(translation[:3, :3]) < 0:
-        print('wtf')
+    # if theta_ang < np.pi / 18:
+    #     translation = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
+    # else:
+    translation = translation_matrix(alpha, betta, gamma)
+    translation[:-1, -1] = x_opt[3:]
     return translation.reshape(4, 4)
 
 
@@ -325,7 +323,7 @@ def scalar_vectors(vectors, normals):
     return scalars
 
 
-def icp(data_set_points, model_set_points, normals_model, init_pose, tolerance, output_path, max_iterations=20,
+def icp(model_set_points, data_set_points, normals_model, init_pose, tolerance, output_path, max_iterations=20,
         p_to_plane=False):
     """
     Итеративный алгоритм ближайших точек с применением методов наименьшего квадрата: "точка-точка", "точка-плоскость",
@@ -425,12 +423,12 @@ def add_noise(data_set):
     index = np.random.choice(range(noised_data_set.shape[0]), int(noised_data_set.shape[0] / 100))
     for i in index:
         for j, coordinate in enumerate(noised_data_set[i]):
-            noise_value = coordinate / 10 * np.random.random_sample()
+            noise_value = (coordinate / 100) * np.random.random_sample()
             if i % 2 == 0:
                 noise_value = -noise_value
             noised_data_set[i][j] += noise_value
     mean_distance = np.mean(noised_data_set - data_set) + ACCURACY
-    return data_set, mean_distance
+    return noised_data_set, mean_distance
 
 
 def modification_points(type_mod):
@@ -443,7 +441,7 @@ def modification_points(type_mod):
     matrix_transportation = np.identity(4)
     if type_mod == ROTATE:
         matrix_transportation = translation_matrix(np.pi / 150, 0, 0)
-    matrix_transportation[-2, -1] = -0.05
+    matrix_transportation[-2, -1] = -0.1
     return matrix_transportation
 
 
@@ -525,18 +523,19 @@ def main():
     directory_name = args.sample_figure + '_' + args.modification
     if args.noise:
         directory_name += '_noised'
-    os.makedirs(os.path.join(args.o, directory_name), exist_ok=True)
+    output_path = os.path.join(args.o, directory_name)
+    os.makedirs(output_path, exist_ok=True)
     tolerance = ACCURACY
-    model_set, model_normals, data_set = extract_sets(args.sample_figure, args.o)
+    model_set, model_normals, data_set = extract_sets(args.sample_figure, output_path)
     if args.noise:
         data_set, tolerance = add_noise(data_set)
     init_pose = modification_points(args.modification)
-    p_plane_results = icp(model_set, data_set, model_normals, init_pose, tolerance, args.o, p_to_plane=True)
-    p_point_results = icp(model_set, data_set, model_normals, init_pose, tolerance, args.o, p_to_plane=False)
-    draw_analyze_graphic(p_plane_results[0], p_point_results[0], output_path=args.o,
+    p_plane_results = icp(model_set, data_set, model_normals, init_pose, tolerance, output_path, p_to_plane=True)
+    p_point_results = icp(model_set, data_set, model_normals, init_pose, tolerance, output_path, p_to_plane=False)
+    draw_analyze_graphic(p_plane_results[0], p_point_results[0], output_path=output_path,
                          name_graphic='mean distance corresponding points')
-    draw_analyze_graphic(p_plane_results[1], p_point_results[1], output_path=args.o, name_graphic='metric_error')
-    draw_analyze_graphic(p_plane_results[2], p_point_results[2], output_path=args.o,
+    draw_analyze_graphic(p_plane_results[1], p_point_results[1], output_path=output_path, name_graphic='metric_error')
+    draw_analyze_graphic(p_plane_results[2], p_point_results[2], output_path=output_path,
                          name_graphic='time_spend', sum_values=True, label='time (milliseconds)')
 
 
