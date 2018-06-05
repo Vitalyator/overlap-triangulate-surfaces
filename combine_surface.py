@@ -123,7 +123,7 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     plt.savefig(os.path.join(output_path, 'model'))
-    plt.show()
+    plt.close()
 
 
 def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_graphic='plot', sum_values=False,
