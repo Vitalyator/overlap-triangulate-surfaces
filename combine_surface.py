@@ -35,6 +35,8 @@ def make_points_paraboloid(a=0.2, b=0.1):
     for i in range(normals.shape[0]):
         normals[i] = normals[i] / norms[i]
     points = np.array([xgrid.ravel(), ygrid.ravel(), zgrid.ravel()]).T
+    points = points + np.abs(np.min(points)).T
+    points = points / np.max(points)
     return points, normals
 
 
@@ -94,7 +96,6 @@ def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output
     ax.set_zlabel('Z Label')
     plt.savefig(os.path.join(output_path, file_name))
     plt.close()
-    # plt.show()
 
 
 def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
@@ -114,7 +115,7 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
         step += 1
     ax.scatter(points[::step, 0], points[::step, 1], points[::step, 2], c=color, marker=marker, s=3)
     if normals is not None:
-        normals = points + normals
+        normals = points + normals / 100
         for i in range(0, points.shape[0], step):
             line = np.stack((points[i], normals[i]), axis=-1)
             ax.plot(line[0], line[1], line[2], 'g-')
@@ -122,7 +123,6 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     plt.savefig(os.path.join(output_path, 'model'))
-    # plt.close()
     plt.show()
 
 
@@ -159,7 +159,7 @@ def draw_analyze_graphic(p_plane_results, p_point_results, output_path, name_gra
     ax1.legend()
     ax1.grid()
     plt.savefig(os.path.join(output_path, name_graphic))
-    plt.show()
+    plt.close()
 
 
 def search_nearest_neighbors(data_set, model_set):
@@ -522,7 +522,10 @@ def argument_parse():
 
 def main():
     args = argument_parse()
-    os.makedirs(args.o, exist_ok=True)
+    directory_name = args.sample_figure + '_' + args.modification
+    if args.noise:
+        directory_name += '_noised'
+    os.makedirs(os.path.join(args.o, directory_name), exist_ok=True)
     tolerance = ACCURACY
     model_set, model_normals, data_set = extract_sets(args.sample_figure, args.o)
     if args.noise:
