@@ -274,11 +274,11 @@ def calculate_m_opt(x_opt):
     """
     alpha, betta, gamma, t_x, t_y, t_z = tuple(x_opt)
     theta_ang = np.sum(x_opt[:3])
-    # if theta_ang < OPT_ANGLE:
-    #     translation = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
-    # else:
-    translation = translation_matrix(alpha, betta, gamma)
-    translation[:-1, -1] = x_opt[3:]
+    if theta_ang < OPT_ANGLE:
+        translation = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
+    else:
+        translation = translation_matrix(alpha, betta, gamma)
+        translation[:-1, -1] = x_opt[3:]
     return translation.reshape(4, 4)
 
 
