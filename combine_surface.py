@@ -10,9 +10,35 @@ import argparse
 BUNNY = 'bunny'
 ELLIPSOID = 'ellipsoid'
 PATH_TO_FILE_BUNNY = '/home/vitaliy/media/bunny.ply'
-ROTATE = 'translation_rotate'
-ACCURACY = 0.0001
-TRANSLATE_VALUE = -0.1
+ROTATE = 'rotate'
+TRANSLATE = 'translation'
+ACCURACY = 0.001
+TRANSLATE_VALUE = [0, 0, -0.2]
+OPT_ANGLE = 0.00001
+
+
+def make_points_surface():
+    """
+    Генерирует точки и нормали (к точкам) поверхонсти, заданный функцией
+    sqrt(x ** 2 * y ** 2) = z на сетке значений x = [0,1], y = [0,1], с шагом 0.015
+    :return: Массив координат точек и векторов нормалей
+    """
+    x = np.arange(-10, 10, 0.3)
+    y = np.arange(-10, 10, 0.3)
+    xgrid, ygrid = np.meshgrid(x, y)
+    zgrid = np.sqrt(xgrid ** 2 + ygrid ** 2)
+    df_x = xgrid / np.sqrt(xgrid ** 2 + ygrid ** 2)
+    df_y = ygrid / np.sqrt(xgrid ** 2 + ygrid ** 2)
+    df_z = np.empty(xgrid.shape)
+    df_z[:] = -1
+    normals = np.array([df_x.ravel(), df_y.ravel(), df_z.ravel()]).T
+    norms = np.linalg.norm(normals, axis=1)
+    for i in range(normals.shape[0]):
+        normals[i] = normals[i] / norms[i]
+    points = np.array([xgrid.ravel(), ygrid.ravel(), zgrid.ravel()]).T
+    points = points + np.abs(np.min(points))
+    points = points / np.max(points)
+    return points.reshape((-1, 3)), normals.reshape((-1, 3))
 
 
 def make_points_paraboloid(a=0.2, b=0.1):
@@ -26,9 +52,9 @@ def make_points_paraboloid(a=0.2, b=0.1):
     x = np.arange(-10, 10, 0.3)
     y = np.arange(-10, 10, 0.3)
     xgrid, ygrid = np.meshgrid(x, y)
-    zgrid = xgrid ** 2 / (a ** 2 * 4) + ygrid ** 2 / (b ** 2 * 4)
+    zgrid = xgrid ** 2 / (a ** 2 * 4) - ygrid ** 2 / (b ** 2 * 4)
     df_x = xgrid / (a ** 2 * 2)
-    df_y = ygrid / (b ** 2 * 2)
+    df_y = -ygrid / (b ** 2 * 2)
     df_z = np.empty(xgrid.shape)
     df_z[:] = -1
     normals = np.array([df_x.ravel(), df_y.ravel(), df_z.ravel()]).T
@@ -38,7 +64,7 @@ def make_points_paraboloid(a=0.2, b=0.1):
     points = np.array([xgrid.ravel(), ygrid.ravel(), zgrid.ravel()]).T
     points = points + np.abs(np.min(points))
     points = points / np.max(points)
-    return points, normals
+    return points.reshape((-1, 3)), normals.reshape((-1, 3))
 
 
 def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
@@ -53,8 +79,8 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
     :param c: Длина 3ей полуоси
     :return: Массив координат точек и векторов нормалей к точкам
     """
-    theta = np.linspace(-np.pi / 2, np.pi / 2, num=50)
-    thi = np.linspace(0, 2 * np.pi, num=50)
+    theta = np.linspace(-np.pi / 2, np.pi / 2, num=60)
+    thi = np.linspace(0, 2 * np.pi, num=60)
     points = np.empty(0)
     normals = np.empty(0)
     for u in theta:
@@ -69,7 +95,7 @@ def make_points_ellipsoid(center=[0.5, 0.5, 0.5], a=0.4, b=0.2, c=0.2):
             dz_u = 0
             dz_v = -c * np.sin(v)
             normal = np.cross(np.array([[dx_u, dy_u, dz_u]]), np.array([[dx_v, dy_v, dz_v]]))
-            if v < np.pi:
+            if v > np.pi:
                 normal = -normal
             if np.linalg.norm(normal) == 0:
                 continue
@@ -99,6 +125,7 @@ def draw_set_points_clouds(model_set_points_cloud, data_set_points_cloud, output
     ax.set_zlabel('Z Label')
     ax.legend()
     plt.savefig(os.path.join(output_path, file_name))
+    # plt.show()
     plt.close()
 
 
@@ -119,7 +146,7 @@ def draw_points_cloud(points, output_path, normals=None, color='r', marker='o'):
         step += 1
     ax.scatter(points[::step, 0], points[::step, 1], points[::step, 2], c=color, marker=marker, s=3)
     if normals is not None:
-        normals = points + normals / 100
+        normals = points + normals / 1200
         for i in range(0, points.shape[0], step):
             line = np.stack((points[i], normals[i]), axis=-1)
             ax.plot(line[0], line[1], line[2], 'g-')
@@ -246,8 +273,8 @@ def calculate_m_opt(x_opt):
     :return: Матрица преобразования (4 x 4)
     """
     alpha, betta, gamma, t_x, t_y, t_z = tuple(x_opt)
-    # theta_ang = np.sum(x_opt[:3])
-    # if theta_ang < 0.0000001:
+    theta_ang = np.sum(x_opt[:3])
+    # if theta_ang < OPT_ANGLE:
     #     translation = np.array([[1, -gamma, betta, t_x], [gamma, 1, -alpha, t_y], [-betta, alpha, 1, t_z], [0, 0, 0, 1]])
     # else:
     translation = translation_matrix(alpha, betta, gamma)
@@ -322,7 +349,7 @@ def scalar_vectors(vectors, normals):
     return scalars
 
 
-def icp(model_set_points, data_set_points, normals_model, init_pose, tolerance, output_path, max_iterations=20,
+def icp(model_set_points, data_set_points, normals_model, init_pose, tolerance, output_path, max_iterations=30,
         p_to_plane=False):
     """
     Итеративный алгоритм ближайших точек с применением методов наименьшего квадрата: "точка-точка", "точка-плоскость",
@@ -358,17 +385,19 @@ def icp(model_set_points, data_set_points, normals_model, init_pose, tolerance, 
 
     if init_pose is not None:
         data = np.dot(init_pose, data)
-
+    prev_error = 0
     draw_set_points_clouds(model[:m, :].T, data[:m, :].T, output_path, file_name='model_and_data_set')
     start = datetime.now()
     for i in range(max_iterations):
         distances, indices = search_nearest_neighbors(data[:m, :].T, model[:m, :].T)
+
         mean_distance = np.mean(distances)
         mean_distance_errors.append(mean_distance)
         error = error_metric(data[:m, :].T, model[:m, :].T, normals[:m, :].T, indices)
         errors.append(error)
-        if mean_distance <= tolerance:
+        if mean_distance == 0 or abs(prev_error - mean_distance) <= tolerance / 100:
             break
+        prev_error = mean_distance
 
         transformation = minimize_function(data[:m, :].T, model[:m, :].T, normals[:m, :].T, indices)
         data = np.dot(transformation, data)
@@ -421,7 +450,7 @@ def add_noise(data_set):
     index = np.random.choice(range(noised_data_set.shape[0]), int(noised_data_set.shape[0] / 100))
     for i in index:
         for j, coordinate in enumerate(noised_data_set[i]):
-            noise_value = (coordinate / 100) * np.random.random_sample()
+            noise_value = (coordinate / 10) * np.random.random_sample()
             if i % 2 == 0:
                 noise_value = -noise_value
             noised_data_set[i][j] += noise_value
@@ -437,11 +466,15 @@ def modification_points(type_mod):
     по умолчанию, только перемещенения
     :return: Матрица преобразования (4 x 4)
     """
-    matrix_transportation = np.identity(4)
+    matrix_translation = np.identity(4)
     if type_mod == ROTATE:
-        matrix_transportation = translation_matrix(np.pi / 18, 0, 0)
-    matrix_transportation[-2, -1] = TRANSLATE_VALUE
-    return matrix_transportation
+        matrix_translation = translation_matrix(np.pi / 2, np.pi, np.pi)
+    elif type_mod == TRANSLATE:
+        matrix_translation[:-1, -1] = TRANSLATE_VALUE
+    else:
+        matrix_translation = translation_matrix(np.pi / 170, 0, 0)
+        matrix_translation[:-1, -1] = TRANSLATE_VALUE
+    return matrix_translation
 
 
 def get_normal(p1, p2, p3):
@@ -496,9 +529,9 @@ def extract_sets(sample_figure, output_path):
         model_set, model_faces = extract_points_cloud(PATH_TO_FILE_BUNNY)
         model_normals = generate_normals(model_set, model_faces)
     else:
-        generation_function = make_points_ellipsoid if sample_figure == ELLIPSOID else make_points_paraboloid
+        generation_function = make_points_ellipsoid if sample_figure == ELLIPSOID else make_points_surface
         model_set, model_normals = generation_function()
-    draw_points_cloud(model_set, output_path, color='r', marker='o', normals=model_normals)
+    draw_points_cloud(model_set, output_path, color='r', marker='o', normals=None)
     data_set = model_set.copy()
     return model_set, model_normals, data_set
 
@@ -508,7 +541,7 @@ def argument_parse():
                                                           'with used algorithm ICP and analyze results')
     argument_parser.add_argument('--sample_figure', choices=['ellipsoid', 'paraboloid', 'bunny'], default='ellipsoid',
                                  help='Choose sample figure from list for work')
-    argument_parser.add_argument('--modification', choices=['translation', 'translation_rotate'], default='translation',
+    argument_parser.add_argument('--modification', choices=['translation', 'rotate', 'translation_rotate'], default='translation',
                                  help='apply modification for data set points cloud')
     argument_parser.add_argument('--noise', action='store_true',
                                  help='add noise for data set points cloud')
