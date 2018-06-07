@@ -12,8 +12,8 @@ ELLIPSOID = 'ellipsoid'
 PATH_TO_FILE_BUNNY = '/home/vitaliy/media/bunny.ply'
 ROTATE = 'rotate'
 TRANSLATE = 'translation'
-ACCURACY = 0.001
-TRANSLATE_VALUE = [0, 0, -0.2]
+ACCURACY = 0.00001
+TRANSLATE_VALUE = [0, 0, -0.08]
 OPT_ANGLE = 0.00001
 
 
@@ -199,7 +199,7 @@ def search_nearest_neighbors(data_set, model_set):
     >>> search_nearest_neighbors(sample_array, dest_array)
     (array([0.5, 0.5, 1. ]), array([1, 2, 0]))
     """
-    neighbors = NearestNeighbors(n_neighbors=1)
+    neighbors = NearestNeighbors(n_neighbors=1, metric='euclidean')
     neighbors.fit(data_set)
     distances, indices = neighbors.kneighbors(model_set, return_distance=True)
     return distances.ravel(), indices.ravel()
@@ -529,7 +529,7 @@ def extract_sets(sample_figure, output_path):
         model_set, model_faces = extract_points_cloud(PATH_TO_FILE_BUNNY)
         model_normals = generate_normals(model_set, model_faces)
     else:
-        generation_function = make_points_ellipsoid if sample_figure == ELLIPSOID else make_points_surface
+        generation_function = make_points_ellipsoid if sample_figure == ELLIPSOID else make_points_paraboloid
         model_set, model_normals = generation_function()
     draw_points_cloud(model_set, output_path, color='r', marker='o', normals=None)
     data_set = model_set.copy()
@@ -539,7 +539,7 @@ def extract_sets(sample_figure, output_path):
 def argument_parse():
     argument_parser = argparse.ArgumentParser(description='Algorithm combine two points cloud in 3 dimensional space '
                                                           'with used algorithm ICP and analyze results')
-    argument_parser.add_argument('--sample_figure', choices=['ellipsoid', 'paraboloid', 'bunny'], default='ellipsoid',
+    argument_parser.add_argument('--sample_figure', choices=['ellipsoid', 'surface', 'bunny'], default='ellipsoid',
                                  help='Choose sample figure from list for work')
     argument_parser.add_argument('--modification', choices=['translation', 'rotate', 'translation_rotate'], default='translation',
                                  help='apply modification for data set points cloud')
